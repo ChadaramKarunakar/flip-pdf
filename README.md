@@ -67,3 +67,6 @@ A web app can't browse your storage silently, so Flip PDF uses a one-time permis
 - **Connect a folder** (Chrome / Edge on desktop; Chrome on Android where supported): pick e.g. *Downloads* or *Books* once. Each time you open the app it scans that folder (and sub-folders) and adds new PDFs automatically. If the browser asks again, tap *Allow & scan* on the banner.
 - **Pick a folder once**, **Choose PDF files**, drag & drop, **Share → Flip PDF** on phones, or **Open with** on desktop.
 - Books you delete are remembered so folder scans don't re-add them (*Add books → Bring back books I removed* undoes that).
+
+### Colour-coded annotation
+The first time you press **H** (highlight) in a book, Flip PDF asks whether to annotate it with a colour code. Choose storytelling codes (Plot twist, Character development, Genre & tone, Theme & motif, Setting & world, Foreshadowing, Great quote), start with your own, or keep a plain highlighter. Codes belong to each book and are fully editable (rename, recolour, add, remove); existing highlights update to match. Filter highlights by code in the notes drawer (N).

@@ -351,8 +351,8 @@ function renderNotes() {
     const b = L.books.get(id);
     return `<section class="nb"><h4 data-act="open" data-id="${id}">${esc(b.title)}</h4>${ms.sort((x, y) => x.page - y.page).map((m) => `
       <div class="mark" data-act="openMark" data-id="${id}" data-page="${m.page}">
-        <span class="m-ico">${m.type === 'note' ? '✎' : m.type === 'highlight' ? `<i class="dot" style="--c:${m.color || HL_COLORS[0]}"></i>` : '🔖'}</span><span class="m-pg">Page ${m.page + 1}</span>
-        <span class="m-tx">${esc(m.text || (m.type === 'highlight' ? 'Highlight' : 'Bookmark'))}</span>
+        <span class="m-ico">${m.type === 'note' ? '✎' : m.type === 'highlight' ? `<i class="dot" style="--c:${markColor(b, m)}"></i>` : '🔖'}</span><span class="m-pg">Page ${m.page + 1}</span>
+        <span class="m-tx">${markLabel(b, m) ? `<b class="m-code" style="--c:${markColor(b, m)}">${esc(markLabel(b, m))}</b> ` : ''}${esc(m.text || (m.type === 'highlight' ? (markLabel(b, m) ? '' : 'Highlight') : 'Bookmark'))}</span>
         <button class="mini danger" data-act="delMark" data-mid="${m.id}" aria-label="Delete">✕</button></div>`).join('')}</section>`;
   }).join('');
 }
@@ -376,6 +376,15 @@ function render() {
 function openSheet(id) { L.sheetId = id; $('sheet').hidden = false; renderSheet(); }
 function closeSheet() { L.sheetId = null; $('sheet').hidden = true; $('sheet').innerHTML = ''; }
 
+function annotSection(b) {
+  if (useCodes(b)) {
+    const n = legendCounts(b);
+    return `<div class="legend-list">${b.legend.map((c) => `<span class="code static" style="--c:${esc(c.color)}"><i></i>${esc(c.label)} <small>${n.get(c.id) || 0}</small></span>`).join('')}</div>
+      <div class="s-actions" style="margin-top:8px"><button class="btn" data-act="editCodes">✎ Edit colour codes</button><button class="btn" data-act="plainHl">Switch to plain highlighter</button></div>`;
+  }
+  return `<div class="s-info">${b.annot === 'plain' ? 'This book uses a plain highlighter.' : 'Not set up yet — you’ll be asked when you first highlight.'}</div>
+    <div class="s-actions" style="margin-top:8px"><button class="btn" data-act="setupCodes">Annotate with colour codes</button></div>`;
+}
 function renderSheet() {
   const b = L.books.get(L.sheetId); if (!b) { closeSheet(); return; }
   const prevScroll = $('sheet').querySelector('.sheet-card')?.scrollTop || 0;
@@ -408,6 +417,7 @@ function renderSheet() {
     <div class="s-sec"><h4>Rating</h4><div class="stars">${[1, 2, 3, 4, 5].map((n) => `<button class="${n <= b.rating ? 'on' : ''}" data-rate="${n}" aria-label="${n} star">★</button>`).join('')}</div></div>
     <div class="s-sec"><h4>Shelves</h4><div class="chips">${L.shelves.map((s) => `<button class="chip${b.shelves.includes(s.id) ? ' on' : ''}" data-shelf="${s.id}">${esc(s.name)}</button>`).join('')}<button class="chip dashed" data-act="newShelfFor">+ New shelf</button></div></div>
     <div class="s-sec"><h4>Tags</h4><div class="chips">${b.tags.map((t) => `<span class="chip on">#${esc(t)} <button class="tx" data-deltag="${esc(t)}" aria-label="Remove tag ${esc(t)}">✕</button></span>`).join('')}<input class="tag-in" data-tag-input placeholder="Add tag, press Enter" maxlength="30"></div></div>
+    <div class="s-sec"><h4>Annotation</h4>${annotSection(b)}</div>
     <div class="s-sec"><h4>Bookmarks &amp; notes (${marks.length})</h4>
       ${marks.length ? marks.map((m) => `<div class="mark" data-act="openMark" data-id="${b.id}" data-page="${m.page}"><span class="m-ico">${m.type === 'note' ? '✎' : '🔖'}</span><span class="m-pg">Page ${m.page + 1}</span><span class="m-tx">${esc(m.text || 'Bookmark')}</span></div>`).join('') : '<div class="side-hint">None yet. Add them while reading.</div>'}</div>
     <div class="s-sec"><button class="btn danger" data-act="delete">Delete from library</button></div>
@@ -431,6 +441,9 @@ async function sheetClick(e) {
   if (act === 'read') { closeSheet(); location.hash = '#/read/' + b.id; }
   else if (act === 'fav') { b.fav = !b.fav; await saveBook(b); render(); }
   else if (act === 'cover') changeCover(b);
+  else if (act === 'editCodes') { await editLegend(b); }
+  else if (act === 'plainHl') { b.annot = 'plain'; await saveBook(b); refreshAnnotations(); }
+  else if (act === 'setupCodes') { if (!Array.isArray(b.legend) || !b.legend.length) b.legend = newCodes(); b.annot = 'codes'; await saveBook(b); await editLegend(b); }
   else if (act === 'resetProg') { if (await confirmBox({ title: 'Reset progress?', msg: 'Pages-visited tracking for this book starts again from zero.', ok: 'Reset' })) { b.visited = ''; b.progress = 0; if (b.status === 'finished') b.status = 'reading'; await saveBook(b); render(); } }
   else if (act === 'newShelfFor') { const s = await newShelf(); if (s) { b.shelves.push(s.id); await saveBook(b); render(); } }
   else if (act === 'attach') { L.fileMode = { type: 'attach', id: b.id }; $('file').click(); }
@@ -911,6 +924,72 @@ function showReadPct() {
 
 /* ---------------- highlights & comments (draw a box over any part of a page) ---------------- */
 const HL_COLORS = ['#ffd54a', '#7bdc8a', '#6ec6ff', '#ff8fb1'];
+// Storytelling colour codes (the starting set; every book can rename, recolour, add or remove its own)
+const DEFAULT_CODES = [
+  ['#ff6b6b', 'Plot twist'], ['#4dabf7', 'Character development'], ['#b197fc', 'Genre & tone'], ['#ffd43b', 'Theme & motif'],
+  ['#69db7c', 'Setting & world'], ['#ffa94d', 'Foreshadowing'], ['#f783ac', 'Great quote'],
+];
+const newCodes = (src = DEFAULT_CODES) => src.map(([color, label]) => ({ id: db.uid(), color, label }));
+const bookOf = (id) => L.books.get(id);
+const useCodes = (b) => !!(b && b.annot === 'codes' && Array.isArray(b.legend));
+const codeOf = (b, m) => (useCodes(b) && m.code ? b.legend.find((c) => c.id === m.code) : null);
+const markColor = (b, m) => (codeOf(b, m) || {}).color || m.color || HL_COLORS[0];
+const markLabel = (b, m) => (codeOf(b, m) || {}).label || '';
+const legendCounts = (b) => { const n = new Map(); L.marks.filter((m) => m.bookId === b.id && m.type === 'highlight' && m.code).forEach((m) => n.set(m.code, (n.get(m.code) || 0) + 1)); return n; };
+
+// Ask once per book: annotate with colour codes, or just a plain highlighter?
+async function askAnnotate(b) {
+  const v = await pickOne({ title: 'Annotate this book with a colour code?',
+    note: 'Colour codes turn highlights into meaning: for example red = plot twist, blue = character development. You can rename and recolour them any time. Or skip it and use a plain highlighter.',
+    options: [
+      { value: 'themes', label: 'Yes — storytelling codes', sub: 'Plot twist, Character development, Genre & tone, Theme, Setting, Foreshadowing, Quote' },
+      { value: 'custom', label: 'Yes — make my own codes', sub: 'Start empty and name your own' },
+      { value: 'plain', label: 'No — plain highlighter', sub: 'Just coloured highlights, no meanings' }] });
+  if (!v) return false;
+  if (v === 'plain') { b.annot = 'plain'; delete b.legend; }
+  else { b.annot = 'codes'; b.legend = newCodes(v === 'themes' ? DEFAULT_CODES : [['#ff6b6b', 'Code 1'], ['#4dabf7', 'Code 2'], ['#ffd43b', 'Code 3']]); }
+  await saveBook(b);
+  if (v === 'custom') await editLegend(b);
+  return true;
+}
+
+// Edit the colour-code list (rename, recolour, add, remove). Existing highlights follow automatically.
+function editLegend(b) {
+  return new Promise((resolve) => {
+    if (!Array.isArray(b.legend)) b.legend = [];
+    let rows = b.legend.map((c) => ({ ...c }));
+    const draw = () => {
+      const d = $('dialog'); d.hidden = false;
+      d.innerHTML = `<div class="modal-bg" data-x></div><div class="dlg" role="dialog" aria-modal="true"><h3>Colour codes · ${esc(b.title)}</h3>
+        <p class="dlg-note">Each colour has a meaning for this book. Rename it or pick a new colour — highlights you already made update to match.</p>
+        <div class="legend-rows">${rows.map((r, i) => `<div class="lg-row"><input type="color" value="${esc(r.color)}" data-i="${i}" data-k="color" aria-label="Colour"><input type="text" value="${esc(r.label)}" data-i="${i}" data-k="label" maxlength="40" placeholder="Name this code"><button class="mini danger" data-rm="${i}" aria-label="Remove">✕</button></div>`).join('') || '<div class="side-hint">No codes yet.</div>'}</div>
+        <div class="dlg-btns" style="justify-content:flex-start"><button class="btn" data-add>+ Add code</button><button class="btn" data-reset>Reset to storytelling codes</button></div>
+        <div class="dlg-btns"><button class="btn" data-x>Cancel</button><button class="btn primary" data-save>Save</button></div></div>`;
+    };
+    draw();
+    const d = $('dialog');
+    d.oninput = (e) => { const t = e.target.closest('[data-i]'); if (t) rows[Number(t.dataset.i)][t.dataset.k] = t.value; };
+    d.onclick = async (e) => {
+      const rm = e.target.closest('[data-rm]');
+      if (rm) { rows.splice(Number(rm.dataset.rm), 1); draw(); return; }
+      if (e.target.closest('[data-add]')) { const used = new Set(rows.map((r) => r.color)); const c = ['#ff6b6b', '#4dabf7', '#b197fc', '#ffd43b', '#69db7c', '#ffa94d', '#f783ac', '#63e6be', '#e599f7'].find((x) => !used.has(x)) || '#cccccc'; rows.push({ id: db.uid(), color: c, label: '' }); draw(); d.querySelector('.lg-row:last-child input[type=text]')?.focus(); return; }
+      if (e.target.closest('[data-reset]')) { rows = newCodes(); draw(); return; }
+      if (e.target.closest('[data-save]')) {
+        rows = rows.map((r, i) => ({ ...r, label: (r.label || '').trim() || `Code ${i + 1}` }));
+        const keep = new Set(rows.map((r) => r.id));
+        for (const m of L.marks.filter((x) => x.bookId === b.id && x.code && !keep.has(x.code))) { // removed code: keep the highlight in its last colour
+          const old = b.legend.find((c) => c.id === m.code); m.color = old ? old.color : m.color; delete m.code; await db.marks.put(m);
+        }
+        b.legend = rows; b.annot = 'codes'; await saveBook(b);
+        L.bookMarks = L.readerId === b.id ? await db.marks.byBook(b.id) : L.bookMarks; L.marks = await db.marks.all();
+        closeDialog(); refreshAnnotations(); resolve(true);
+      } else if (e.target.closest('[data-x]')) { closeDialog(); resolve(false); }
+    };
+    });
+}
+function refreshAnnotations() {
+  renderHighlights(); if (L.hl) drawHlBar(); if (!$('drawer').hidden) renderDrawer(); if (L.sheetId) renderSheet(); if (L.route.name === 'notes') renderNotes();
+}
 function renderHighlights() {
   const R = window.FlipReader; if (!L.readerId) return;
   const byPage = new Map();
@@ -921,26 +1000,41 @@ function renderHighlights() {
     const list = byPage.get(i);
     if (!list) { layer && layer.remove(); continue; }
     if (!layer) { layer = document.createElement('div'); layer.className = 'hl-layer'; pg.appendChild(layer); }
-    layer.innerHTML = list.map((m) => `<div class="hl${m.text ? ' has-c' : ''}" data-mid="${m.id}" style="left:${m.rect.x * 100}%;top:${m.rect.y * 100}%;width:${m.rect.w * 100}%;height:${m.rect.h * 100}%;--c:${m.color || HL_COLORS[0]}" title="${esc(m.text || 'Highlight')}"></div>`).join('');
+    layer.innerHTML = list.map((m) => `<div class="hl${m.text ? ' has-c' : ''}" data-mid="${m.id}" style="left:${m.rect.x * 100}%;top:${m.rect.y * 100}%;width:${m.rect.w * 100}%;height:${m.rect.h * 100}%;--c:${markColor(bookOf(L.readerId), m)}" title="${esc([markLabel(bookOf(L.readerId), m), m.text].filter(Boolean).join(': ') || 'Highlight')}"></div>`).join('');
   }
 }
 window.addEventListener('flip:built', () => { renderHighlights(); });
 
-function setHighlightMode(on) {
-  L.hl = on; document.body.classList.toggle('hl-on', on);
-  $('btnHighlight').classList.toggle('on', on);
+function drawHlBar() {
+  const bar = $('hlbar'); if (!bar) return; const b = bookOf(L.readerId);
+  if (useCodes(b)) {
+    if (!b.legend.some((c) => c.id === L.hlCode)) L.hlCode = b.legend[0] && b.legend[0].id;
+    bar.innerHTML = `<div class="hl-codes">${b.legend.map((c) => `<button class="code${c.id === L.hlCode ? ' on' : ''}" data-code="${c.id}" style="--c:${esc(c.color)}"><i></i>${esc(c.label)}</button>`).join('')}</div>
+      <button class="btn" data-edit-codes>✎ Edit codes</button><button class="btn" data-plain>Plain</button><button class="btn primary" data-done>Done</button>`;
+  } else {
+    bar.innerHTML = `<span>Drag on the page to highlight</span>` + HL_COLORS.map((c) => `<button class="sw${c === L.hlColor ? ' on' : ''}" data-c="${c}" style="--c:${c}" aria-label="Colour"></button>`).join('') + `<button class="btn" data-codes>Use colour codes</button><button class="btn primary" data-done>Done</button>`;
+  }
+}
+async function setHighlightMode(on) {
+  if (!on) { L.hl = false; document.body.classList.remove('hl-on'); $('btnHighlight').classList.remove('on'); const x = $('hlbar'); if (x) x.hidden = true; return; }
+  const b = bookOf(L.readerId); if (!b) return;
+  if (!b.annot) { if (!(await askAnnotate(b))) return; }
+  L.hl = true; document.body.classList.add('hl-on'); $('btnHighlight').classList.add('on');
   let bar = $('hlbar');
   if (!bar) { bar = document.createElement('div'); bar.id = 'hlbar'; bar.className = 'hlbar'; document.body.appendChild(bar); }
-  bar.hidden = !on;
-  if (on) {
-    if (window.FlipReader.mode !== 'slide') { window.FlipReader.useReaderMode(); toast('Switched to Reader view for highlighting', 2200); }
-    bar.innerHTML = `<span>Drag on the page to highlight</span>` + HL_COLORS.map((c) => `<button class="sw${c === L.hlColor ? ' on' : ''}" data-c="${c}" style="--c:${c}" aria-label="Colour"></button>`).join('') + `<button class="btn" data-done>Done</button>`;
-  }
+  bar.hidden = false;
+  if (window.FlipReader.mode !== 'slide') { window.FlipReader.useReaderMode(); toast('Switched to Reader view for highlighting', 2200); }
+  drawHlBar(); renderHighlights();
 }
 $('btnHighlight').onclick = () => setHighlightMode(!L.hl);
 document.addEventListener('click', (e) => {
   const bar = e.target.closest('#hlbar'); if (!bar) return;
   const c = e.target.closest('[data-c]'); if (c) { L.hlColor = c.dataset.c; store.set('hlColor', L.hlColor); bar.querySelectorAll('.sw').forEach((x) => x.classList.toggle('on', x === c)); }
+  const code = e.target.closest('[data-code]'); if (code) { L.hlCode = code.dataset.code; bar.querySelectorAll('.code').forEach((x) => x.classList.toggle('on', x === code)); }
+  const b = bookOf(L.readerId);
+  if (e.target.closest('[data-edit-codes]') && b) editLegend(b);
+  if (e.target.closest('[data-codes]') && b) { (async () => { if (!Array.isArray(b.legend) || !b.legend.length) { b.legend = newCodes(); } b.annot = 'codes'; await saveBook(b); refreshAnnotations(); })(); }
+  if (e.target.closest('[data-plain]') && b) { (async () => { b.annot = 'plain'; await saveBook(b); refreshAnnotations(); })(); }
   if (e.target.closest('[data-done]')) setHighlightMode(false);
 });
 
@@ -949,13 +1043,17 @@ async function editMark(m) {
     const isHl = m.type === 'highlight';
     const d = openDialog(`<h3>${isHl ? 'Highlight' : m.type === 'note' ? 'Note' : 'Bookmark'} · page ${m.page + 1}</h3>
       <label class="fld">${isHl ? 'Comment (optional)' : 'Text'}<textarea id="mkText" rows="4" maxlength="600">${esc(m.text || '')}</textarea></label>
-      ${isHl ? `<div class="hl-cols">${HL_COLORS.map((c) => `<button class="sw${c === (m.color || HL_COLORS[0]) ? ' on' : ''}" data-c="${c}" style="--c:${c}" aria-label="Colour"></button>`).join('')}</div>` : ''}
+      ${isHl ? (useCodes(bookOf(m.bookId))
+        ? `<div class="hl-codes pick">${bookOf(m.bookId).legend.map((c) => `<button class="code${c.id === m.code ? ' on' : ''}" data-pc="${c.id}" style="--c:${esc(c.color)}"><i></i>${esc(c.label)}</button>`).join('')}</div>`
+        : `<div class="hl-cols">${HL_COLORS.map((c) => `<button class="sw${c === (m.color || HL_COLORS[0]) ? ' on' : ''}" data-c="${c}" style="--c:${c}" aria-label="Colour"></button>`).join('')}</div>`) : ''}
       <div class="dlg-btns"><button class="btn danger" id="mkDel">Delete</button><button class="btn" data-x>Cancel</button><button class="btn primary" id="mkOk">Save</button></div>`);
-    let color = m.color; $('mkText').focus();
+    let color = m.color, code = m.code; $('mkText').focus();
     d.onclick = async (e) => {
+      const pc = e.target.closest('[data-pc]');
+      if (pc) { code = pc.dataset.pc; d.querySelectorAll('.code').forEach((x) => x.classList.toggle('on', x === pc)); return; }
       const c = e.target.closest('[data-c]');
       if (c) { color = c.dataset.c; d.querySelectorAll('.sw').forEach((x) => x.classList.toggle('on', x === c)); return; }
-      if (e.target.closest('#mkOk')) { m.text = $('mkText').value.trim(); if (isHl) m.color = color || m.color; await db.marks.put(m); closeDialog(); afterMarkChange(); resolve(); }
+      if (e.target.closest('#mkOk')) { m.text = $('mkText').value.trim(); if (isHl) { const cd = useCodes(bookOf(m.bookId)) && code ? bookOf(m.bookId).legend.find((x) => x.id === code) : null; if (cd) { m.code = cd.id; m.color = cd.color; } else m.color = color || m.color; } await db.marks.put(m); closeDialog(); afterMarkChange(); resolve(); }
       else if (e.target.closest('#mkDel')) { await db.marks.del(m.id); L.bookMarks = L.bookMarks.filter((x) => x.id !== m.id); closeDialog(); afterMarkChange(); resolve(); }
       else if (e.target.closest('[data-x]')) { closeDialog(); resolve(); }
     };
@@ -973,7 +1071,7 @@ $('reader').addEventListener('pointerdown', (e) => {
   if (hl) { e.preventDefault(); const m = L.bookMarks.find((x) => x.id === hl.dataset.mid); if (m) editMark(m); return; }
   const pg = e.target.closest('.pg'); if (!pg) return;
   e.preventDefault(); const r = pg.getBoundingClientRect();
-  const box = document.createElement('div'); box.className = 'hl draft'; box.style.setProperty('--c', L.hlColor);
+  const box = document.createElement('div'); box.className = 'hl draft'; { const bk = bookOf(L.readerId); const cd = useCodes(bk) ? bk.legend.find((c) => c.id === L.hlCode) : null; box.style.setProperty('--c', cd ? cd.color : L.hlColor); }
   let layer = pg.querySelector(':scope > .hl-layer'); if (!layer) { layer = document.createElement('div'); layer.className = 'hl-layer'; pg.appendChild(layer); }
   layer.appendChild(box);
   drag = { pg, r, box, x0: (e.clientX - r.left) / r.width, y0: (e.clientY - r.top) / r.height, id: e.pointerId };
@@ -992,24 +1090,30 @@ async function endDrag(e) {
   const rect = { x: Math.min(d.x0, d.x1), y: Math.min(d.y0, d.y1), w: Math.abs(d.x1 - d.x0), h: Math.abs(d.y1 - d.y0) };
   if (rect.w < 0.02 || rect.h < 0.01) return;               // ignore taps
   const idx = Number(d.pg.dataset.n) - 1;
-  const m = { id: db.uid(), bookId: L.readerId, page: idx, type: 'highlight', rect, color: L.hlColor, text: '', createdAt: Date.now() };
+  const bk = bookOf(L.readerId); const cd = useCodes(bk) ? bk.legend.find((c) => c.id === L.hlCode) : null;
+  const m = { id: db.uid(), bookId: L.readerId, page: idx, type: 'highlight', rect, color: cd ? cd.color : L.hlColor, code: cd ? cd.id : undefined, text: '', createdAt: Date.now() };
   await db.marks.put(m); L.bookMarks.push(m); await afterMarkChange();
-  toast('Highlighted — tap it to add a comment', 2200);
+  toast(cd ? `${cd.label} — tap the highlight to add a comment` : 'Highlighted — tap it to add a comment', 2200);
 }
 $('reader').addEventListener('pointerup', endDrag);
 $('reader').addEventListener('pointercancel', endDrag);
 $('reader').addEventListener('click', (e) => { if (L.hl) { e.stopPropagation(); e.preventDefault(); } }, true);
 
 function renderDrawer() {
-  const items = [...L.bookMarks].sort((a, b) => a.page - b.page);
+  const b = bookOf(L.readerId); const codes = useCodes(b);
+  if (!codes) L.drawerCode = null;
+  let items = [...L.bookMarks].sort((a, c) => a.page - c.page);
+  if (codes && L.drawerCode) items = items.filter((m) => m.type === 'highlight' && m.code === L.drawerCode);
+  const counts = codes ? (() => { const n = new Map(); L.bookMarks.filter((m) => m.type === 'highlight' && m.code).forEach((m) => n.set(m.code, (n.get(m.code) || 0) + 1)); return n; })() : null;
   $('drawer').innerHTML = `
     <div class="dr-head"><h3>Bookmarks, notes &amp; highlights</h3><button class="mini" data-dr="close" aria-label="Close">✕</button></div>
+    ${codes ? `<div class="hl-codes legend-filter"><button class="code${!L.drawerCode ? ' on' : ''}" data-dr="fcode" data-id="" style="--c:#999"><i></i>All</button>${b.legend.map((c) => `<button class="code${L.drawerCode === c.id ? ' on' : ''}" data-dr="fcode" data-id="${c.id}" style="--c:${esc(c.color)}"><i></i>${esc(c.label)} <small>${counts.get(c.id) || 0}</small></button>`).join('')}</div><button class="mini" data-dr="editcodes">✎ Edit colour codes</button>` : ''}
     <form class="dr-form" id="noteForm"><textarea name="text" rows="3" maxlength="600" placeholder="Write a note for page ${L.page + 1}…"></textarea>
       <button class="btn primary">Save note</button></form>
-    <div class="dr-list">${items.length ? items.map((m) => `
-      <div class="mark" data-dr="go" data-page="${m.page}"><span class="m-ico">${m.type === 'note' ? '✎' : m.type === 'highlight' ? `<i class="dot" style="--c:${m.color || HL_COLORS[0]}"></i>` : '🔖'}</span><span class="m-pg">Page ${m.page + 1}</span>
-        <span class="m-tx">${esc(m.text || (m.type === 'highlight' ? 'Highlight' : 'Bookmark'))}</span>${m.type !== 'bookmark' ? `<button class="mini" data-dr="edit" data-mid="${m.id}" aria-label="Edit">✎</button>` : ''}<button class="mini danger" data-dr="del" data-mid="${m.id}" aria-label="Delete">✕</button></div>`).join('')
-      : '<div class="side-hint">No bookmarks or notes in this book yet. Use the bookmark button, or write a note above.</div>'}</div>`;
+    <div class="dr-list">${items.length ? items.map((m) => { const lab = b ? markLabel(b, m) : ''; return `
+      <div class="mark" data-dr="go" data-page="${m.page}"><span class="m-ico">${m.type === 'note' ? '✎' : m.type === 'highlight' ? `<i class="dot" style="--c:${markColor(b, m)}"></i>` : '🔖'}</span><span class="m-pg">Page ${m.page + 1}</span>
+        <span class="m-tx">${lab ? `<b class="m-code" style="--c:${markColor(b, m)}">${esc(lab)}</b> ` : ''}${esc(m.text || (m.type === 'highlight' ? (lab ? '' : 'Highlight') : 'Bookmark'))}</span>${m.type !== 'bookmark' ? `<button class="mini" data-dr="edit" data-mid="${m.id}" aria-label="Edit">✎</button>` : ''}<button class="mini danger" data-dr="del" data-mid="${m.id}" aria-label="Delete">✕</button></div>`; }).join('')
+      : '<div class="side-hint">Nothing here yet. Use the bookmark button, highlight (H), or write a note above.</div>'}</div>`;
 }
 function toggleDrawer(force) {
   const open = force ?? $('drawer').hidden;
@@ -1020,6 +1124,8 @@ $('drawer').addEventListener('click', async (e) => {
   const t = e.target.closest('[data-dr]'); if (!t) return;
   const k = t.dataset.dr;
   if (k === 'close') toggleDrawer(false);
+  else if (k === 'fcode') { L.drawerCode = t.dataset.id || null; renderDrawer(); }
+  else if (k === 'editcodes') { const b = bookOf(L.readerId); if (b) editLegend(b); }
   else if (k === 'del') {
     e.stopPropagation(); await db.marks.del(t.dataset.mid);
     L.bookMarks = L.bookMarks.filter((m) => m.id !== t.dataset.mid); await afterMarkChange();
