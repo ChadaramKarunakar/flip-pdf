@@ -61,3 +61,9 @@ Flip PDF is now a small book-reading app. Everything is stored **on your device*
 - **Backup & restore**: export a `.zip` (with or without the PDFs) and restore it on another phone/computer. This is how to move your library between devices until cloud sync is added.
 
 Storage layout lives behind `db.js`, so a Cloudflare (D1/R2) sync backend can later be added without touching the UI.
+
+### Adding books from your device
+A web app can't browse your storage silently, so Flip PDF uses a one-time permission:
+- **Connect a folder** (Chrome / Edge on desktop; Chrome on Android where supported): pick e.g. *Downloads* or *Books* once. Each time you open the app it scans that folder (and sub-folders) and adds new PDFs automatically. If the browser asks again, tap *Allow & scan* on the banner.
+- **Pick a folder once**, **Choose PDF files**, drag & drop, **Share → Flip PDF** on phones, or **Open with** on desktop.
+- Books you delete are remembered so folder scans don't re-add them (*Add books → Bring back books I removed* undoes that).

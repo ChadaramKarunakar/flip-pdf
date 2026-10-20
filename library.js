@@ -173,6 +173,7 @@ async function importFiles(list, opts = {}) {
   if (opts.wish && out.length) { await db.wish.del(opts.wish.id); L.wish = L.wish.filter((w) => w.id !== opts.wish.id); }
   render();
   if (out.length === 1 && pdfs.length === 1 && opts.open) { location.hash = '#/read/' + out[0].id; return out; }
+  if (opts.silent) return out;
   const added = out.filter((b) => !b._dup).length;
   if (added) toast(`Added ${added} book${added > 1 ? 's' : ''}${dupes ? ` (${dupes} already in library)` : ''}`);
   else if (dupes && !failed) toast('That book is already in your library');
@@ -283,7 +284,7 @@ function renderBooksView() {
   if (!L.books.size) {
     html = `<div class="empty"><div class="empty-ico">📚</div><h3>Your library is empty</h3>
       <p>Add PDFs to build your bookshelf. Everything stays on this device, private and offline.</p>
-      <button class="btn primary big" data-act="add">+ Add PDFs</button>
+      <button class="btn primary big" data-act="add">+ Add books from your device</button>
       <small>Tip: you can also drag &amp; drop PDFs anywhere on this page.</small></div>`;
   } else if (!list.length) {
     html = `<div class="empty"><h3>${L.q || L.tag ? 'No matching books' : 'Nothing here yet'}</h3>
@@ -457,6 +458,7 @@ $('sheet').addEventListener('keydown', async (e) => {
 function renderMainOnly() { const r = L.route.name; if (r === 'wishlist') renderWishlist(); else if (r === 'notes') renderNotes(); else renderBooksView(); }
 
 async function removeBook(id) {
+  { const b = L.books.get(id); if (b && b.fp) addIgnored(b.fp); }
   await db.deleteBook(id);
   L.books.delete(id); L.marks = L.marks.filter((m) => m.bookId !== id); L.selected.delete(id);
   const c = L.covers.get(id); if (c) { URL.revokeObjectURL(c.url); L.covers.delete(id); }
@@ -577,7 +579,7 @@ $('libBody').addEventListener('click', async (e) => {
     const a = act.dataset.act;
     if (a === 'detail') { e.stopPropagation(); openSheet(act.dataset.id); return; }
     if (a === 'open') { location.hash = '#/read/' + act.dataset.id; return; }
-    if (a === 'add') { L.fileMode = { type: 'add' }; $('file').click(); return; }
+    if (a === 'add') { devicesDialog(); return; }
     if (a === 'renameShelf') { renameShelf(); return; }
     if (a === 'deleteShelf') { deleteShelf(); return; }
     if (a === 'wishPdf') { L.fileMode = { type: 'wish', id: act.dataset.id }; $('file').click(); return; }
@@ -613,8 +615,104 @@ $('sort').addEventListener('change', (e) => { L.sort = e.target.value; store.set
 $('group').addEventListener('change', (e) => { L.group = e.target.value; store.set('group', L.group); renderBooksView(); });
 $('btnLayout').onclick = () => { L.layout = L.layout === 'grid' ? 'list' : 'grid'; store.set('layout', L.layout); render(); };
 
+
+/* ---------------- device folders: scan & auto-add ---------------- */
+const canWatch = typeof window.showDirectoryPicker === 'function';
+const ignoredKey = 'ignored';
+function getIgnored() { try { return new Set(JSON.parse(store.get(ignoredKey, '[]'))); } catch { return new Set(); } }
+function addIgnored(fp) { const s = getIgnored(); s.add(fp); store.set(ignoredKey, JSON.stringify([...s])); }
+
+async function walk(dir, out, depth = 0) {
+  for await (const [name, h] of dir.entries()) {
+    if (h.kind === 'file') { if (/\.pdf$/i.test(name)) out.push(h); }
+    else if (depth < 4 && !name.startsWith('.') && !/^(node_modules|\$RECYCLE\.BIN|System Volume Information|Android)$/i.test(name)) {
+      try { await walk(h, out, depth + 1); } catch {}
+    }
+  }
+}
+// returns number of books added
+async function scanHandle(rec, { quiet = true } = {}) {
+  const hs = []; await walk(rec.handle, hs);
+  const ignored = getIgnored(); const have = new Set([...L.books.values()].map((b) => b.fp));
+  const fresh = [];
+  for (const h of hs) {
+    try { const f = await h.getFile(); const fp = `${f.name}|${f.size}`; if (!have.has(fp) && !ignored.has(fp)) { fresh.push(f); have.add(fp); } } catch {}
+  }
+  rec.lastScan = Date.now(); rec.found = hs.length; await db.handles.put(rec);
+  if (!fresh.length) { if (!quiet) toast(`No new PDFs in “${rec.name}” (${hs.length} found)`); return 0; }
+  const added = await importFiles(fresh, { silent: true });
+  if (added.length) toast(`Added ${added.length} new book${added.length > 1 ? 's' : ''} from “${rec.name}”`, 4500);
+  return added.length;
+}
+async function scanAll({ interactive = false } = {}) {
+  if (!canWatch) return;
+  let recs = []; try { recs = await db.handles.all(); } catch { return; }
+  const need = [];
+  for (const rec of recs) {
+    let perm = 'prompt'; try { perm = await rec.handle.queryPermission({ mode: 'read' }); } catch {}
+    if (perm === 'granted') { try { await scanHandle(rec); } catch (e) { console.warn('scan', e); } }
+    else need.push(rec);
+  }
+  const bar = $('scanBar');
+  if (need.length && !interactive) {
+    bar.hidden = false;
+    bar.innerHTML = `<span>📁 Allow access to ${need.map((r) => '“' + esc(r.name) + '”').join(', ')} to look for new books.</span><button class="btn primary" data-scan>Allow &amp; scan</button><button class="mini" data-scan-x aria-label="Dismiss">✕</button>`;
+    bar.onclick = async (e) => {
+      if (e.target.closest('[data-scan-x]')) { bar.hidden = true; return; }
+      if (!e.target.closest('[data-scan]')) return;
+      for (const rec of need) { try { if (await rec.handle.requestPermission({ mode: 'read' }) === 'granted') await scanHandle(rec, { quiet: false }); } catch (err) { console.warn(err); } }
+      bar.hidden = true; render();
+    };
+  } else if (!need.length) $('scanBar').hidden = true;
+}
+async function addWatchedFolder() {
+  let handle; try { handle = await window.showDirectoryPicker({ id: 'flippdf-books', mode: 'read' }); } catch { return; }
+  const recs = await db.handles.all();
+  for (const r of recs) { try { if (await r.handle.isSameEntry(handle)) { toast('That folder is already connected'); return; } } catch {} }
+  const rec = { id: db.uid(), name: handle.name, handle, addedAt: Date.now() };
+  await db.handles.put(rec); db.requestPersistence();
+  busy(`Looking for PDFs in “${handle.name}”…`);
+  try { const n = await scanHandle(rec, { quiet: false }); if (!n) { /* toast shown */ } } catch (e) { console.error(e); toast('Could not read that folder'); }
+  finally { unbusy(); render(); }
+}
+async function devicesDialog() {
+  const recs = canWatch ? await db.handles.all() : [];
+  const d = openDialog(`<h3>Add books from your device</h3>
+    <p class="dlg-note">${canWatch
+      ? 'Connect a folder once (for example Downloads or Books). Flip PDF scans it each time you open the app and adds new PDFs automatically.'
+      : 'This browser can’t keep a folder connected, so pick your PDFs yourself. On a phone, you can also use Share → Flip PDF from any file manager or app, or choose “Open with” on a PDF.'}</p>
+    ${recs.length ? `<div class="dlg-list">${recs.map((r) => `<div class="fold"><span>📁 ${esc(r.name)}<small>${r.found != null ? r.found + ' PDFs' : ''}${r.lastScan ? ' · scanned ' + fmtDate(r.lastScan) : ''}</small></span><button class="mini" data-fscan="${r.id}">Scan now</button><button class="mini danger" data-fdel="${r.id}">Remove</button></div>`).join('')}</div>` : ''}
+    <div class="dlg-list">
+      ${canWatch ? `<button class="dlg-opt" data-d="folder">Connect a folder…<small>Auto-adds new PDFs every time you open the app</small></button>` : ''}
+      <button class="dlg-opt" data-d="dir">Pick a folder once<small>One-time scan of everything inside a folder</small></button>
+      <button class="dlg-opt" data-d="files">Choose PDF files…<small>Select one or many</small></button>
+      ${getIgnored().size ? `<button class="dlg-opt" data-d="unignore">Bring back books I removed<small>Allows folder scans to add them again</small></button>` : ''}
+    </div><div class="dlg-btns"><button class="btn" data-x>Close</button></div>`);
+  d.onclick = async (e) => {
+    const f = e.target.closest('[data-fscan]'), x = e.target.closest('[data-fdel]'), o = e.target.closest('[data-d]');
+    if (f) { const rec = (await db.handles.all()).find((r) => r.id === f.dataset.fscan); closeDialog(); if (rec) { try { if (await rec.handle.requestPermission({ mode: 'read' }) === 'granted') { busy('Scanning…'); await scanHandle(rec, { quiet: false }); } } catch (err) { toast('Permission was not granted'); } finally { unbusy(); render(); } } }
+    else if (x) { await db.handles.del(x.dataset.fdel); closeDialog(); devicesDialog(); }
+    else if (o) {
+      closeDialog();
+      if (o.dataset.d === 'folder') addWatchedFolder();
+      else if (o.dataset.d === 'files') { L.fileMode = { type: 'add' }; $('file').click(); }
+      else if (o.dataset.d === 'dir') $('fileDir').click();
+      else if (o.dataset.d === 'unignore') { store.set(ignoredKey, '[]'); toast('Removed books can be added again'); }
+    } else if (e.target.closest('[data-x]')) closeDialog();
+  };
+}
+$('fileDir').onchange = async () => {
+  const files = [...$('fileDir').files].filter((f) => /\.pdf$/i.test(f.name)); $('fileDir').value = '';
+  if (!files.length) { toast('No PDFs found in that selection'); return; }
+  const ign = getIgnored(); const have = new Set([...L.books.values()].map((b) => b.fp));
+  const fresh = files.filter((f) => !have.has(`${f.name}|${f.size}`) && !ign.has(`${f.name}|${f.size}`));
+  if (!fresh.length) { toast('Everything in that folder is already in your library'); return; }
+  const added = await importFiles(fresh); if (added.length) toast(`Added ${added.length} book${added.length > 1 ? 's' : ''}`);
+};
+document.addEventListener('visibilitychange', () => { if (!document.hidden && document.body.classList.contains('view-library')) scanAll(); });
+
 /* ---------------- adding files (button, drag & drop, share, file handler) ---------------- */
-$('btnAdd').onclick = () => { L.fileMode = { type: 'add' }; $('file').click(); };
+$('btnAdd').onclick = () => devicesDialog();
 $('file').onchange = async () => {
   const files = [...$('file').files]; $('file').value = '';
   const mode = L.fileMode; L.fileMode = { type: 'add' };
@@ -1008,6 +1106,7 @@ window.addEventListener('hashchange', route);
   }
   await route();
   openSharedPdf();
+  scanAll();
 })();
 
 // small hook for automated tests

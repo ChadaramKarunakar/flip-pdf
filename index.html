@@ -24,7 +24,7 @@
   <div class="title" id="title"></div>
   <div class="actions">
     <button class="btn" id="btnInstall" hidden title="Install Flip PDF as an app">Install app</button>
-    <button class="btn primary lib-only" id="btnAdd" title="Add PDFs to your library">+ Add PDF</button>
+    <button class="btn primary lib-only" id="btnAdd" title="Add books from your device">+ Add books</button>
 
     <button class="btn icon-only read-only" id="btnBookmark" title="Bookmark this page (B)">
       <svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linejoin="round"><path id="bmIcon" d="M6 3h12v18l-6-4-6 4z"/></svg>
@@ -52,6 +52,7 @@
 <main class="library" id="viewLibrary">
   <nav class="side" id="side" aria-label="Library sections"></nav>
   <section class="lib-main">
+    <div class="scanbar" id="scanBar" hidden></div>
     <div class="lib-head">
       <h2 id="libTitle">Library</h2>
       <div class="lib-tools" id="libTools">
@@ -150,6 +151,7 @@
 <div class="dropveil" id="dropveil">Drop PDFs to add them to your library</div>
 
 <input type="file" id="file" accept="application/pdf,.pdf" multiple hidden>
+<input type="file" id="fileDir" webkitdirectory multiple hidden>
 <input type="file" id="fileCover" accept="image/*" hidden>
 <input type="file" id="fileRestore" accept=".zip,application/zip" hidden>
 

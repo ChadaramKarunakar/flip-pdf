@@ -10,7 +10,7 @@
 //   wish    : wishlist / bucket list           { id, title, author, note, link, priority, addedAt }
 
 const DB_NAME = 'flippdf-library';
-const DB_VERSION = 1;
+const DB_VERSION = 2;
 let dbp = null;
 
 export function open() {
@@ -18,12 +18,13 @@ export function open() {
   dbp = new Promise((resolve, reject) => {
     const r = indexedDB.open(DB_NAME, DB_VERSION);
     r.onupgradeneeded = () => {
-      const d = r.result;
-      d.createObjectStore('books', { keyPath: 'id' });
-      d.createObjectStore('files', { keyPath: 'id' });
-      d.createObjectStore('shelves', { keyPath: 'id' });
-      d.createObjectStore('marks', { keyPath: 'id' }).createIndex('bookId', 'bookId');
-      d.createObjectStore('wish', { keyPath: 'id' });
+      const d = r.result; const has = (n) => d.objectStoreNames.contains(n);
+      if (!has('books')) d.createObjectStore('books', { keyPath: 'id' });
+      if (!has('files')) d.createObjectStore('files', { keyPath: 'id' });
+      if (!has('shelves')) d.createObjectStore('shelves', { keyPath: 'id' });
+      if (!has('marks')) d.createObjectStore('marks', { keyPath: 'id' }).createIndex('bookId', 'bookId');
+      if (!has('wish')) d.createObjectStore('wish', { keyPath: 'id' });
+      if (!has('handles')) d.createObjectStore('handles', { keyPath: 'id' });   // watched device folders
     };
     r.onsuccess = () => resolve(r.result);
     r.onerror = () => reject(r.error);
@@ -60,6 +61,7 @@ export const files = table('files');
 export const shelves = table('shelves');
 export const marks = table('marks');
 export const wish = table('wish');
+export const handles = table('handles');
 
 marks.byBook = async (bookId) => { const { s } = await store('marks'); return req(s.index('bookId').getAll(bookId)); };
 

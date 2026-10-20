@@ -1,23 +1,27 @@
 :root{
   --radius:12px;
   --font-ui:system-ui,-apple-system,"Segoe UI",Roboto,"Helvetica Neue",Arial,sans-serif;
-  --font-brand:Georgia,"Times New Roman",serif;
+  --font-brand:"Iowan Old Style","Palatino Linotype",Palatino,Georgia,"Times New Roman",serif;
 }
 body[data-theme="dark"]{
-  --bg1:#241c16; --bg2:#0e0b09;
-  --panel:rgba(255,255,255,.06); --panel-hover:rgba(255,255,255,.12);
-  --border:rgba(255,255,255,.12);
-  --text:#f2ebe0; --muted:#a89c8b;
-  --accent:#e8b04a; --accent-ink:#1a1410;
-  --shadow:rgba(0,0,0,.65);
+  --bg1:#3a2516; --bg2:#150b05;
+  --panel:rgba(255,222,170,.07); --panel-hover:rgba(255,222,170,.15);
+  --border:rgba(222,176,112,.24);
+  --text:#f5e8d2; --muted:#bfa584;
+  --accent:#dba847; --accent-ink:#2a1608;
+  --shadow:rgba(0,0,0,.7);
+  --wood:url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='700' height='500'%3E%3Cfilter id='w' x='0' y='0' width='100%25' height='100%25'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.006 0.11' numOctaves='4' seed='7' stitchTiles='stitch'/%3E%3CfeColorMatrix values='0 0 0 0 0.07 0 0 0 0 0.03 0 0 0 0 0.01 -2.6 0 0 0 1.55'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url%28%23w%29'/%3E%3C/svg%3E"); --plank:linear-gradient(#8a5a33,#6b4223 45%,#4d2d16);
+  --frame:#5a3820; --back:rgba(10,4,0,.5);
 }
 body[data-theme="light"]{
-  --bg1:#f4efe4; --bg2:#d9cfbc;
-  --panel:rgba(0,0,0,.05); --panel-hover:rgba(0,0,0,.10);
-  --border:rgba(0,0,0,.14);
-  --text:#2a221a; --muted:#6f6454;
-  --accent:#c9831c; --accent-ink:#fff8ea;
-  --shadow:rgba(60,40,10,.45);
+  --bg1:#ecd7b0; --bg2:#c8a574;
+  --panel:rgba(70,40,10,.08); --panel-hover:rgba(70,40,10,.16);
+  --border:rgba(90,55,20,.28);
+  --text:#3a2412; --muted:#7a5f40;
+  --accent:#9c5f1a; --accent-ink:#fff6e2;
+  --shadow:rgba(60,35,10,.5);
+  --wood:url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='700' height='500'%3E%3Cfilter id='w' x='0' y='0' width='100%25' height='100%25'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.006 0.11' numOctaves='4' seed='7' stitchTiles='stitch'/%3E%3CfeColorMatrix values='0 0 0 0 0.3 0 0 0 0 0.15 0 0 0 0 0.04 -1.4 0 0 0 .95'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url%28%23w%29'/%3E%3C/svg%3E"); --plank:linear-gradient(#c89a5e,#a97b41 45%,#855c2c);
+  --frame:#b78d58; --back:rgba(58,28,6,.66);
 }
 *{box-sizing:border-box}
 a{color:inherit;text-decoration:none}
@@ -25,7 +29,7 @@ html,body{height:100%;margin:0}
 [hidden]{display:none!important}
 body{
   font-family:var(--font-ui); color:var(--text);
-  background:radial-gradient(120% 90% at 50% 40%, var(--bg1) 0%, var(--bg2) 100%) fixed;
+  background:radial-gradient(120% 90% at 50% 35%, transparent 35%, var(--bg2) 130%) fixed, var(--wood) 0 0/700px 500px, var(--bg1);
   display:flex; flex-direction:column; overflow:hidden;
   height:100dvh; overscroll-behavior:none;
   padding:env(safe-area-inset-top) env(safe-area-inset-right) env(safe-area-inset-bottom) env(safe-area-inset-left);
@@ -265,3 +269,84 @@ body.dragging .dropveil{display:flex}
   .readpct{display:none}
   .btn.read-only.sm-hide{display:none!important}
 }
+
+
+/* ================= WOODEN LIBRARY THEME ================= */
+body{font-family:var(--font-brand)}
+button,input,select,textarea{font-family:var(--font-ui)}
+/* header = polished walnut rail with a brass edge */
+.top{align-self:stretch;width:100%;background:linear-gradient(rgba(0,0,0,.1),rgba(0,0,0,.38)),var(--wood) 0 0/700px 500px,var(--bg1);
+  border-bottom:3px solid var(--accent);box-shadow:0 6px 18px rgba(0,0,0,.45);position:relative;z-index:20}
+body[data-theme="light"] .top{--text:#fff2d8;--muted:#e8d2aa;color:#fff2d8;background:linear-gradient(rgba(0,0,0,.05),rgba(0,0,0,.3)),var(--wood) 0 0/700px 500px,#8a5a30}
+body[data-theme="light"] .top .btn{--panel:rgba(255,240,210,.14);--panel-hover:rgba(255,240,210,.26);--border:rgba(255,230,190,.35);color:#fff2d8}
+body[data-theme="light"] .top .btn.primary{background:#e6b655;color:#2a1608}
+.brand{color:var(--accent);text-shadow:0 1px 0 rgba(0,0,0,.6);letter-spacing:.5px}
+.btn{border-radius:8px}.btn.primary{background:linear-gradient(#e8bb58,#c98f2b);box-shadow:inset 0 1px 0 rgba(255,255,255,.35),0 2px 4px rgba(0,0,0,.4);text-shadow:0 1px 0 rgba(255,255,255,.25)}
+.btn.primary:hover{background:linear-gradient(#f0c565,#d39a34)}
+
+/* side panel = carved wood cabinet */
+.side{background:linear-gradient(rgba(0,0,0,.25),rgba(0,0,0,.4)),var(--wood) 0 0/700px 500px,var(--frame);border:2px solid rgba(0,0,0,.45);border-radius:12px;padding:10px 8px;margin:8px 0 0;box-shadow:inset 0 0 0 1px rgba(255,220,160,.15),0 6px 16px rgba(0,0,0,.4);color:#f5e8d2;--muted:#d1b793;--text:#f5e8d2;--panel:rgba(255,222,170,.1);--border:rgba(255,222,170,.25)}
+.side-item:hover{background:rgba(255,222,170,.14)}
+.side-item.on{background:linear-gradient(#e8bb58,#c98f2b);color:#2a1608;box-shadow:inset 0 1px 0 rgba(255,255,255,.3)}
+.side-h{color:#e1c48f}
+.lib-head h2{color:var(--text);text-shadow:0 2px 0 rgba(0,0,0,.35);letter-spacing:.4px}
+body[data-theme="light"] .lib-head h2{text-shadow:0 1px 0 rgba(255,255,255,.4)}
+
+/* the bookcase: framed, with a darker back panel */
+.lib-body{background:var(--back);border:10px solid var(--frame);border-image:none;border-radius:6px;
+  box-shadow:inset 0 0 0 2px rgba(0,0,0,.45),inset 0 12px 30px rgba(0,0,0,.55),0 8px 24px rgba(0,0,0,.45),0 0 0 2px rgba(255,220,160,.14);padding:18px 14px 90px;
+  background-image:linear-gradient(var(--back),var(--back)),var(--wood);background-size:auto,700px 500px;background-blend-mode:normal}
+.lib-body{outline:0}
+.grid{gap:30px 18px;padding:6px 6px 0}
+/* each book stands on a plank that runs through the whole row */
+.book{container-type:inline-size;position:relative;padding-bottom:2px}
+.book::after{content:"";position:absolute;left:-10px;right:-10px;top:calc(150cqw + 0px);height:14px;background:var(--plank);
+  box-shadow:0 5px 8px rgba(0,0,0,.6),inset 0 1px 0 rgba(255,225,170,.45);border-radius:2px;z-index:0}
+.book .cover{position:relative;z-index:1;box-shadow:6px 0 10px -2px rgba(0,0,0,.55),0 -2px 8px rgba(0,0,0,.35),inset 4px 0 5px -3px rgba(255,255,255,.35),inset -3px 0 5px -3px rgba(0,0,0,.5)}
+.book .meta{padding-top:24px;position:relative;z-index:1}
+.book .t{color:#f5e8d2;font-family:var(--font-brand)}.book .a{color:#c9ae88}
+body[data-theme="light"] .book .t{color:#fff2d8}body[data-theme="light"] .book .a{color:#e8d2aa}
+.cover .pbar{background:rgba(0,0,0,.45)}
+.grp h3{color:#f0d9aa;font-family:var(--font-brand);border-bottom:1px solid rgba(222,176,112,.35);padding-bottom:6px;text-shadow:0 1px 0 rgba(0,0,0,.5)}
+.grp h3 small{color:#c9ae88}
+/* list rows, continue card, wishlist, notes = leather-bound cards */
+.row,.continue,.wish,.mark,.empty-card{background:linear-gradient(rgba(0,0,0,.28),rgba(0,0,0,.4)),var(--wood) 0 0/700px 500px,var(--frame);border:1px solid rgba(255,220,160,.2);box-shadow:0 3px 8px rgba(0,0,0,.4);color:#f5e8d2;--muted:#cdb28c;--text:#f5e8d2}
+.mark{border-radius:8px}.row:hover,.mark:hover{filter:brightness(1.12)}
+.row .t,.continue .t,.wish .t{color:#f5e8d2}.row .a,.continue .a,.wish .a{color:#cdb28c}
+.row .pbar,.continue .pbar{background:rgba(0,0,0,.4)}
+.empty,.empty h3{color:#f0d9aa}.empty p,.empty small{color:#cdb28c}
+.nb h4{color:#f0d9aa}
+.lib-body .grp,.lib-body .nb{color:#f5e8d2}
+/* fields on wood */
+.lib-tools input,.lib-tools select,.wish-form input,.wish-form select{background:rgba(20,8,0,.35);border-color:rgba(222,176,112,.35);color:#f5e8d2}
+.lib-tools input::placeholder,.wish-form input::placeholder{color:#b99d78}
+body[data-theme="light"] .lib-tools input,body[data-theme="light"] .lib-tools select{background:rgba(255,246,226,.55);color:#3a2412}
+.lib-tools .btn,.lib-tools select{--text:#f5e8d2}
+body[data-theme="light"] .lib-tools .btn{color:#3a2412}
+.tagrow .chip{background:rgba(20,8,0,.3);color:#f5e8d2;border-color:rgba(222,176,112,.35)}.tagrow .chip.on{background:var(--accent);color:var(--accent-ink)}
+body[data-theme="light"] .tagrow .chip{background:rgba(255,246,226,.5);color:#3a2412}
+/* dialogs / sheet = dark leather with brass trim */
+.dlg,.sheet-card,.overlay .card,.drawer,.selbar,.hlbar,.toast{background:linear-gradient(rgba(0,0,0,.18),rgba(0,0,0,.3)),var(--wood) 0 0/700px 500px,var(--bg1);border:2px solid var(--accent);border-radius:14px}
+.toast{border-radius:10px;border-width:1px}
+body[data-theme="light"] .dlg,body[data-theme="light"] .sheet-card,body[data-theme="light"] .drawer,body[data-theme="light"] .selbar,body[data-theme="light"] .hlbar,body[data-theme="light"] .overlay .card,body[data-theme="light"] .toast{background:linear-gradient(rgba(255,246,226,.55),rgba(255,246,226,.35)),var(--wood) 0 0/700px 500px,#e7cf9f}
+.dlg h3,.sheet-card h4,.dr-head h3{font-family:var(--font-brand)}
+.scanbar{display:flex;gap:10px;align-items:center;padding:8px 12px;margin:0 0 10px;border-radius:10px;background:linear-gradient(#e8bb58,#c98f2b);color:#2a1608;font-size:14px}
+.scanbar span{flex:1}.scanbar .btn.primary{background:#2a1608;color:#f0d9aa}
+.fold{display:flex;gap:8px;align-items:center;padding:8px 10px;border-radius:10px;background:var(--panel)}.fold span{flex:1;min-width:0}.fold small{display:block;color:var(--muted);font-size:12px}
+/* reader stage = dark walnut desk */
+.stage{background:radial-gradient(90% 80% at 50% 45%,rgba(255,200,120,.07),transparent 70%)}
+.bar{background:linear-gradient(rgba(0,0,0,.25),rgba(0,0,0,.45)),var(--wood) 0 0/700px 500px,var(--bg1);border-top:2px solid var(--accent)}
+body[data-theme="light"] .bar{--text:#fff2d8;--muted:#e8d2aa;color:#fff2d8;background:linear-gradient(rgba(0,0,0,.05),rgba(0,0,0,.3)),var(--wood) 0 0/700px 500px,#8a5a30;--panel:rgba(255,240,210,.14);--border:rgba(255,230,190,.35)}
+.page,.slide .pg{box-shadow:0 0 0 1px rgba(0,0,0,.25)}
+.dropveil{background:rgba(30,14,4,.8)}
+@media (max-width:720px){
+  .side{background:none;border:0;box-shadow:none;padding:0 0 8px;margin:0}
+  .side-item{--text:var(--text);color:var(--text);background:rgba(20,8,0,.35);border-color:rgba(222,176,112,.35)}
+  body[data-theme="light"] .side-item{background:rgba(255,246,226,.55)}
+  .side-item.on{background:linear-gradient(#e8bb58,#c98f2b);color:#2a1608}
+  .lib-body{border-width:6px;padding:12px 6px 90px}
+  .book::after{left:-6px;right:-6px;height:11px}
+}
+
+body[data-theme="light"] .top .brand{color:#fff2d8}
+body[data-theme="light"] .brand svg rect{fill:#e6b655}
