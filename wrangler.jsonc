@@ -1,0 +1,8 @@
+{
+  // Deploys Flip PDF as a static site on Cloudflare (no build step).
+  "name": "flip-pdf",
+  "compatibility_date": "2026-10-01",
+  "assets": {
+    "directory": "./"
+  }
+}

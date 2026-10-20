@@ -1,0 +1,11 @@
+.git
+.gitignore
+.assetsignore
+wrangler.jsonc
+node_modules
+README.md
+server.py
+server.js
+start.bat
+start.sh
+*.log

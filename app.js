@@ -7,7 +7,7 @@ const el = {
   stage: $('stage'), host: $('bookHost'), title: $('title'), file: $('file'), drop: $('drop'),
   slider: $('slider'), pageInput: $('pageInput'), pageTotal: $('pageTotal'), quality: $('quality'),
   prep: $('prep'), overlay: $('overlay'), overlayText: $('overlayText'), meterWrap: $('meterWrap'),
-  meter: $('meter'), toast: $('toast'), modeIcon: $('modeIcon'),
+  meter: $('meter'), toast: $('toast'), modeIcon: $('modeIcon'), reader: $('reader'),
 };
 
 const store = {
@@ -15,15 +15,21 @@ const store = {
   set: (k, v) => { try { localStorage.setItem('flippdf:' + k, v); } catch {} },
 };
 
+function IS_PHONE() {
+  try { return matchMedia('(pointer: coarse)').matches && Math.min(screen.width, screen.height) < 700; } catch { return false; }
+}
+const LOW_MEM = IS_PHONE() || (navigator.deviceMemory && navigator.deviceMemory <= 4);
+
 const S = {
   pdf: null, n: 0, ratio: 0.66, name: '', key: '',
   tw: 980, th: 1400,
   urls: [], blobs: [], imgs: [], inflight: {}, failed: {}, done: 0,
   flip: null, cur: 0, gen: 0, pumping: false,
-  mode: store.get('mode', 'spread'),      // user's choice: 'spread' | 'single'
+  mode: store.get('mode', IS_PHONE() ? 'slide' : 'spread'), // 'spread' | 'single' (curl) | 'slide' (Kindle-style)
   builtMode: null,                         // what the current book was built as
   theme: store.get('theme', 'dark'),
-  th0: Number(store.get('quality', '1400')),
+  th0: Number(store.get('quality', LOW_MEM ? '1000' : '1400')),
+  win: LOW_MEM ? 20 : Infinity,            // how many pages around the current one stay rendered
 };
 
 /* ---------- small helpers ---------- */
@@ -44,8 +50,15 @@ const blobToDataURL = (b) => new Promise((res, rej) => {
 
 /* ---------- theme / mode ---------- */
 function applyTheme() { document.body.dataset.theme = S.theme; }
+const MODE_ICON = {
+  spread: 'M3 5h8v14H3zM13 5h8v14h-8z',
+  single: 'M6 5h12v14H6z',
+  slide: 'M3 12h13M12 7l5 5-5 5M20 5v14',
+};
+const MODE_NAME = { spread: 'Two-page book', single: 'Single page (curl)', slide: 'Reader (swipe, one page)' };
 function modeIconPath() {
-  el.modeIcon.setAttribute('d', S.mode === 'single' ? 'M6 5h12v14H6z' : 'M3 5h8v14H3zM13 5h8v14h-8z');
+  el.modeIcon.setAttribute('d', MODE_ICON[S.mode]);
+  $('btnMode').title = `View: ${MODE_NAME[S.mode]} (M)`;
 }
 applyTheme(); modeIconPath();
 el.quality.value = String(S.th0);
@@ -53,8 +66,10 @@ S.th = S.th0;
 
 $('btnTheme').onclick = () => { S.theme = S.theme === 'dark' ? 'light' : 'dark'; store.set('theme', S.theme); applyTheme(); };
 $('btnMode').onclick = () => {
-  S.mode = S.mode === 'spread' ? 'single' : 'spread'; store.set('mode', S.mode); modeIconPath();
-  if (S.pdf) buildBook();
+  // on a narrow screen the two-page spread isn't available, so skip it
+  const order = el.stage.clientWidth < 560 ? ['single', 'slide'] : ['spread', 'single', 'slide'];
+  S.mode = order[(Math.max(order.indexOf(S.mode), 0) + 1) % order.length]; store.set('mode', S.mode); modeIconPath();
+  if (S.pdf) { buildBook(); toast(MODE_NAME[S.mode], 1500); }
 };
 $('btnFull').onclick = toggleFullscreen;
 function toggleFullscreen() {
@@ -145,6 +160,7 @@ function fit(mode) {
 function layout() {
   if (!S.pdf) return;
   if (effMode() !== S.builtMode) { buildBook(); return; }
+  if (S.builtMode === 'slide') { sizeReader(); return; }
   const f = fit(S.builtMode);
   el.host.style.width = f.w + 'px'; el.host.style.height = f.h + 'px';
   S.flip?.update();
@@ -159,6 +175,10 @@ function buildBook() {
     try { S.flip.destroy(); } catch {}
     S.flip = null;
   }
+  const mode0 = effMode();
+  document.body.classList.toggle('slide', mode0 === 'slide');
+  if (mode0 === 'slide') { buildReader(); return; }
+  el.reader.hidden = true; el.reader.innerHTML = '';
   // brand-new container so the library starts clean
   const old = $('book'); const fresh = document.createElement('div'); fresh.id = 'book';
   if (old) old.replaceWith(fresh); else el.host.appendChild(fresh); // destroy() may remove the container
@@ -203,8 +223,72 @@ function onFlip(idx) {
   el.pageInput.title = `Showing ${lab}`;
   $('navPrev').disabled = $('btnPrev').disabled = $('btnFirst').disabled = idx <= 0;
   $('navNext').disabled = $('btnNext').disabled = $('btnLast').disabled = idx >= S.n - 1;
+  evict();
   pump();
 }
+// On phones keep only a window of rendered pages in memory
+function evict() {
+  if (!isFinite(S.win)) return;
+  const lim = S.win + 6;
+  for (let i = 0; i < S.n; i++) {
+    if (S.urls[i] && Math.abs(i - S.cur) > lim) {
+      URL.revokeObjectURL(S.urls[i]); S.urls[i] = undefined; S.blobs[i] = undefined; S.done--;
+      const img = S.imgs[i];
+      if (img) { img.removeAttribute('src'); img.parentElement.classList.remove('ready'); }
+    }
+  }
+}
+
+
+/* ---------- Reader mode: Kindle-style, one page at a time, horizontal swipe ---------- */
+function buildReader() {
+  S.builtMode = 'slide';
+  const old = $('book'); if (old) old.innerHTML = '';
+  const r = el.reader; r.innerHTML = ''; r.hidden = false;
+  S.imgs = [];
+  for (let i = 0; i < S.n; i++) {
+    const slide = document.createElement('div'); slide.className = 'slide';
+    const pg = document.createElement('div'); pg.className = 'page pg'; pg.dataset.n = i + 1;
+    const img = new Image(); img.alt = `Page ${i + 1}`; img.draggable = false;
+    pg.appendChild(img); slide.appendChild(pg); r.appendChild(slide); S.imgs.push(img);
+    if (S.urls[i]) { img.src = S.urls[i]; pg.classList.add('ready'); }
+  }
+  el.slider.max = S.n; el.pageInput.max = S.n; el.pageTotal.textContent = '/ ' + S.n;
+  sizeReader();
+  r.scrollLeft = S.cur * r.clientWidth;
+  onFlip(Math.min(S.cur, S.n - 1));
+  pump();
+}
+function sizeReader() {
+  const f = fit('single');
+  el.reader.style.setProperty('--pw', f.w + 'px'); el.reader.style.setProperty('--ph', f.h + 'px');
+  el.reader.scrollLeft = S.cur * el.reader.clientWidth; // keep the same page after resize/rotate
+}
+function readerGo(i, smooth = true) {
+  i = Math.min(Math.max(i, 0), S.n - 1);
+  el.reader.scrollTo({ left: i * el.reader.clientWidth, behavior: smooth ? 'smooth' : 'auto' });
+}
+let readerRaf = 0;
+el.reader.addEventListener('scroll', () => {
+  if (S.builtMode !== 'slide') return;
+  cancelAnimationFrame(readerRaf);
+  readerRaf = requestAnimationFrame(() => {
+    const w = el.reader.clientWidth || 1;
+    const idx = Math.min(Math.max(Math.round(el.reader.scrollLeft / w), 0), S.n - 1);
+    if (idx !== S.cur) onFlip(idx);
+  });
+}, { passive: true });
+// tap the left / right edge to turn the page, like an e-reader
+el.reader.addEventListener('click', (e) => {
+  const r = el.reader.getBoundingClientRect(); const x = (e.clientX - r.left) / r.width;
+  if (x < 0.28) api.prev(); else if (x > 0.72) api.next();
+});
+
+const api = {
+  next() { S.flip ? S.flip.flipNext() : readerGo(S.cur + 1); },
+  prev() { S.flip ? S.flip.flipPrev() : readerGo(S.cur - 1); },
+  go(i) { i = Math.min(Math.max(i, 0), S.n - 1); S.flip ? S.flip.flip(i) : readerGo(i); },
+};
 
 /* ---------- lazy page rendering ---------- */
 async function renderPage(i) {
@@ -238,7 +322,7 @@ async function renderPage(i) {
   return p;
 }
 function updatePrep() {
-  el.prep.textContent = S.done >= S.n ? '' : `Preparing pages ${S.done}/${S.n}`;
+  el.prep.textContent = S.done >= S.n || isFinite(S.win) ? '' : `Preparing pages ${S.done}/${S.n}`;
 }
 async function pump() {
   if (S.pumping || !S.pdf) return;
@@ -247,6 +331,7 @@ async function pump() {
     let best = -1, bd = Infinity;
     for (let i = 0; i < S.n; i++) {
       if (S.urls[i] || S.inflight[i] || S.failed[i]) continue;
+      if (Math.abs(i - S.cur) > S.win) continue;
       const d = i >= S.cur - 1 ? Math.abs(i - S.cur) : (S.cur - i) * 1.6 + 1; // look ahead first
       if (d < bd) { bd = d; best = i; }
     }
@@ -257,9 +342,9 @@ async function pump() {
 }
 
 /* ---------- navigation ---------- */
-const go = (idx) => S.flip && S.flip.flip(Math.min(Math.max(idx, 0), S.n - 1));
-$('btnNext').onclick = $('navNext').onclick = () => S.flip?.flipNext();
-$('btnPrev').onclick = $('navPrev').onclick = () => S.flip?.flipPrev();
+const go = (idx) => S.pdf && api.go(idx);
+$('btnNext').onclick = $('navNext').onclick = () => api.next();
+$('btnPrev').onclick = $('navPrev').onclick = () => api.prev();
 $('btnFirst').onclick = () => go(0);
 $('btnLast').onclick = () => go(S.n - 1);
 el.slider.oninput = () => { el.pageInput.value = el.slider.value; };
@@ -270,8 +355,8 @@ el.pageInput.onchange = () => go(Number(el.pageInput.value) - 1);
 window.addEventListener('keydown', (e) => {
   if (!S.pdf || e.target.tagName === 'INPUT' || e.target.tagName === 'SELECT' || e.metaKey || e.ctrlKey || e.altKey) return;
   const k = e.key;
-  if (k === 'ArrowRight' || k === 'PageDown' || k === ' ') { e.preventDefault(); S.flip?.flipNext(); }
-  else if (k === 'ArrowLeft' || k === 'PageUp') { e.preventDefault(); S.flip?.flipPrev(); }
+  if (k === 'ArrowRight' || k === 'PageDown' || k === ' ') { e.preventDefault(); api.next(); }
+  else if (k === 'ArrowLeft' || k === 'PageUp') { e.preventDefault(); api.prev(); }
   else if (k === 'Home') go(0);
   else if (k === 'End') go(S.n - 1);
   else if (k === 'f' || k === 'F') toggleFullscreen();
@@ -378,17 +463,61 @@ $('btnExport').onclick = async () => {
     const titleJson = JSON.stringify(S.name).replace(/</g, '\\u003c');
     parts.push(`];(${exportViewer.toString()})(PAGES,${S.ratio},${titleJson});</script></body></html>`);
     const out = new Blob(parts, { type: 'text/html' });
-    const a = document.createElement('a');
-    a.href = URL.createObjectURL(out); a.download = `${S.name || 'flipbook'}-flipbook.html`;
-    document.body.appendChild(a); a.click(); a.remove();
-    setTimeout(() => URL.revokeObjectURL(a.href), 60000);
-    toast(`Saved ${(out.size / 1048576).toFixed(1)} MB flipbook. Open it in any browser.`, 5000);
+    const fileName = `${S.name || 'flipbook'}-flipbook.html`;
+    let shared = false;
+    if (IS_PHONE() && navigator.canShare) {            // phones: use the share sheet (Drive, WhatsApp, Files…)
+      const f = new File([out], fileName, { type: 'text/html' });
+      if (navigator.canShare({ files: [f] })) {
+        try { await navigator.share({ files: [f], title: S.name }); shared = true; }
+        catch (e) { if (e.name === 'AbortError') shared = true; }
+      }
+    }
+    if (!shared) {
+      const a = document.createElement('a');
+      a.href = URL.createObjectURL(out); a.download = fileName;
+      document.body.appendChild(a); a.click(); a.remove();
+      setTimeout(() => URL.revokeObjectURL(a.href), 60000);
+    }
+    toast(`Flipbook ready (${(out.size / 1048576).toFixed(1)} MB). Open it in any browser.`, 5000);
   } catch (err) {
     if (err.message !== 'cancelled') { console.error(err); toast('Export failed: ' + err.message, 5000); }
   } finally {
     hideOverlay();
   }
 };
+
+
+/* ---------- PWA: install, offline, receive PDFs from the phone's Share menu ---------- */
+if ('serviceWorker' in navigator) {
+  window.addEventListener('load', () => navigator.serviceWorker.register('./sw.js').catch((e) => console.warn('SW', e)));
+}
+let deferredInstall = null;
+window.addEventListener('beforeinstallprompt', (e) => { e.preventDefault(); deferredInstall = e; $('btnInstall').hidden = false; });
+window.addEventListener('appinstalled', () => { deferredInstall = null; $('btnInstall').hidden = true; toast('Flip PDF installed'); });
+$('btnInstall').onclick = async () => {
+  if (!deferredInstall) return;
+  deferredInstall.prompt(); await deferredInstall.userChoice; deferredInstall = null; $('btnInstall').hidden = true;
+};
+// A PDF shared to the installed app (Android Share menu) is stashed by the service worker
+(async function openSharedPdf() {
+  if (!location.search.includes('shared=1') || !('caches' in window)) return;
+  try {
+    const c = await caches.open('flippdf-shared');
+    const r = await c.match('shared-pdf');
+    history.replaceState(null, '', location.pathname);
+    if (!r) return;
+    const blob = await r.blob();
+    const name = decodeURIComponent(r.headers.get('x-name') || 'shared.pdf');
+    await c.delete('shared-pdf');
+    loadFile(new File([blob], name, { type: 'application/pdf' }));
+  } catch (e) { console.warn(e); }
+})();
+// "Open with Flip PDF" from the desktop file manager (installed desktop PWA)
+if ('launchQueue' in window) {
+  window.launchQueue.setConsumer(async (p) => {
+    if (p.files && p.files.length) loadFile(await p.files[0].getFile());
+  });
+}
 
 // expose a tiny hook for automated testing
 window.__flippdf = { S, loadFile };
