@@ -1,5 +1,6 @@
 // Flip PDF — turn any PDF into a flippable book. Runs entirely in the browser.
 import * as pdfjsLib from './vendor/pdf.min.mjs';
+import { pdfParams } from './pdfopts.js';
 pdfjsLib.GlobalWorkerOptions.workerSrc = './vendor/pdf.worker.min.mjs';
 
 const $ = (id) => document.getElementById(id);
@@ -29,7 +30,8 @@ const S = {
   builtMode: null,                         // what the current book was built as
   theme: store.get('theme', 'dark'),
   th0: Number(store.get('quality', LOW_MEM ? '1000' : '1400')),
-  win: LOW_MEM ? 20 : Infinity,            // how many pages around the current one stay rendered
+  win: LOW_MEM ? 8 : 30,                   // how many pages around the current one stay rendered
+  tries: {}, quietUntil: 0,
 };
 
 /* ---------- small helpers ---------- */
@@ -84,7 +86,7 @@ async function loadFile(file, opts = {}) {
   showOverlay('Opening…');
   try {
     const data = new Uint8Array(await file.arrayBuffer());
-    const pdf = await pdfjsLib.getDocument({ data }).promise;
+    const pdf = await pdfjsLib.getDocument(pdfParams(data)).promise;
     resetBook();
     S.pdf = pdf; S.n = pdf.numPages;
     S.bookId = opts.bookId || null;
@@ -114,8 +116,13 @@ async function loadFile(file, opts = {}) {
   }
 }
 
-function setQuality(th) {
-  S.th = th; S.tw = Math.round(th * S.ratio);
+// th0 is the quality ceiling chosen by the user. We never render more pixels than the screen can show,
+// which keeps pages sharp but makes rendering and flipping much lighter.
+function setQuality(th0) {
+  S.th0 = th0; let need = th0;
+  try { const f = fit(effMode() === 'slide' ? 'single' : effMode()); need = Math.ceil(f.h * Math.min(window.devicePixelRatio || 1, 2.5) * 1.08); } catch {}
+  S.th = Math.round(Math.min(th0, Math.max(need, 800)));
+  S.tw = Math.round(S.th * S.ratio);
 }
 el.quality.onchange = () => {
   S.th0 = Number(el.quality.value); store.set('quality', String(S.th0));
@@ -126,10 +133,11 @@ el.quality.onchange = () => {
 function revokeAll() { S.urls.forEach((u) => u && URL.revokeObjectURL(u)); }
 function clearCache() {
   S.gen++; revokeAll();
-  S.urls = []; S.blobs = []; S.imgs = []; S.inflight = {}; S.failed = {}; S.done = 0; S.pumping = false;
+  S.urls = []; S.blobs = []; S.imgs = []; S.inflight = {}; S.failed = {}; S.tries = {}; S.done = 0; S.pumping = false;
 }
 function resetBook() {
   clearCache();
+  if (S.pdf) { try { S.pdf.destroy(); } catch {} S.pdf = null; }
   if (S.flip) { try { S.flip.destroy(); } catch {} S.flip = null; }
   S.builtMode = null;
 }
@@ -217,6 +225,7 @@ function onFlip(idx) {
   window.dispatchEvent(new CustomEvent('flip:page', { detail: { idx, last, n: S.n, bookId: S.bookId } }));
   $('navPrev').disabled = $('btnPrev').disabled = $('btnFirst').disabled = idx <= 0;
   $('navNext').disabled = $('btnNext').disabled = $('btnLast').disabled = idx >= S.n - 1;
+  S.quietUntil = performance.now() + 650;
   evict();
   pump();
 }
@@ -277,6 +286,7 @@ el.reader.addEventListener('scroll', () => {
 el.reader.addEventListener('click', (e) => {
   const r = el.reader.getBoundingClientRect(); const x = (e.clientX - r.left) / r.width;
   if (x < 0.28) api.prev(); else if (x > 0.72) api.next();
+  else retryPage(S.cur);
 });
 
 // Touch screens: the curl is driven by simple, forgiving gestures instead of a precise corner drag.
@@ -306,10 +316,13 @@ const api = {
 };
 
 /* ---------- lazy page rendering ---------- */
+const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
+const SCALE_STEPS = [1, 0.75, 0.55];                 // if a page fails, retry smaller (very large scans on low-memory phones)
 async function renderPage(i) {
   if (S.urls[i]) return S.urls[i];
   if (S.inflight[i]) return S.inflight[i];
-  const gen = S.gen, pdf = S.pdf, tw = S.tw, th = S.th;
+  const gen = S.gen, pdf = S.pdf, attempt = S.tries[i] || 0, k = SCALE_STEPS[Math.min(attempt, 2)];
+  const tw = Math.round(S.tw * k), th = Math.round(S.th * k);
   const p = (async () => {
     const page = await pdf.getPage(i + 1);
     const v1 = page.getViewport({ scale: 1 });
@@ -318,22 +331,31 @@ async function renderPage(i) {
     const c = document.createElement('canvas'); c.width = tw; c.height = th;
     const ctx = c.getContext('2d', { alpha: false });
     ctx.fillStyle = '#fff'; ctx.fillRect(0, 0, tw, th);
-    await page.render({
-      canvasContext: ctx, viewport: vp,
-      transform: [1, 0, 0, 1, (tw - vp.width) / 2, (th - vp.height) / 2],
-    }).promise;
-    const blob = await new Promise((r) => c.toBlob(r, 'image/jpeg', 0.88));
+    const task = page.render({ canvasContext: ctx, viewport: vp, transform: [1, 0, 0, 1, (tw - vp.width) / 2, (th - vp.height) / 2] });
+    const guard = setTimeout(() => { try { task.cancel(); } catch {} }, 30000);   // never hang forever
+    try { await task.promise; } finally { clearTimeout(guard); }
+    const blob = await new Promise((r) => c.toBlob(r, 'image/jpeg', 0.86));
     page.cleanup(); c.width = c.height = 0;
+    if (!blob) throw new Error('could not encode page');
     if (gen !== S.gen) return null;
     const url = URL.createObjectURL(blob);
-    S.urls[i] = url; S.blobs[i] = blob; S.done++;
+    S.urls[i] = url; S.blobs[i] = blob; S.done++; delete S.failed[i];
     const img = S.imgs[i];
-    if (img) { img.src = url; img.parentElement.classList.add('ready'); }
+    if (img) {
+      img.decoding = 'async'; img.src = url;
+      try { await img.decode(); } catch {}                // decode before showing so flipping never stutters
+      if (gen === S.gen) { img.parentElement.classList.remove('err'); img.parentElement.classList.add('ready'); }
+    }
     updatePrep();
     return url;
   })();
   S.inflight[i] = p;
-  p.catch(() => { S.failed[i] = true; }).finally(() => { delete S.inflight[i]; });
+  p.catch((e) => {
+    if (gen !== S.gen) return;
+    console.warn('page', i + 1, 'failed', e);
+    S.failed[i] = true; S.tries[i] = attempt + 1;
+    const img = S.imgs[i]; if (img) img.parentElement.classList.add('err');
+  }).finally(() => { delete S.inflight[i]; });
   return p;
 }
 function updatePrep() {
@@ -351,10 +373,19 @@ async function pump() {
       if (d < bd) { bd = d; best = i; }
     }
     if (best < 0) break;
-    try { await renderPage(best); } catch (e) { console.warn('page', best + 1, e); }
+    // pages we don't need this instant wait until the flip animation / drag has settled
+    if (bd > 1.5) while (gen === S.gen && performance.now() < S.quietUntil) await sleep(90);
+    try { await renderPage(best); } catch (e) { /* handled in renderPage */ }
+    await sleep(bd > 1.5 ? 40 : 0);                       // let the browser paint between pages
   }
-  if (gen === S.gen) S.pumping = false;
+  if (gen !== S.gen) return;
+  S.pumping = false;
+  // failed pages near the reader get another go (a smaller size each time), up to 3 attempts
+  const retry = Object.keys(S.failed).map(Number).filter((i) => (S.tries[i] || 0) < 3 && Math.abs(i - S.cur) <= 2);
+  if (retry.length) setTimeout(() => { if (gen !== S.gen) return; retry.forEach((i) => delete S.failed[i]); pump(); }, 1000);
 }
+// tapping a page that couldn't be drawn retries it right away
+function retryPage(i) { if (S.failed[i] || (S.tries[i] || 0) >= 3) { delete S.failed[i]; S.tries[i] = 0; pump(); } }
 
 /* ---------- navigation ---------- */
 const go = (idx) => S.pdf && api.go(idx);

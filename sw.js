@@ -1,6 +1,6 @@
 // Flip PDF service worker: makes the app work offline and receives PDFs from the phone's Share menu.
 // Bump VERSION whenever app files change so installed copies refresh.
-const VERSION = 'flippdf-v5';
+const VERSION = 'flippdf-v6';
 const SHARED_CACHE = 'flippdf-shared';
 const SHELL = [
   './',
@@ -10,6 +10,7 @@ const SHELL = [
   'library.js',
   'db.js',
   'zip.js',
+  'pdfopts.js',
   'manifest.webmanifest',
   'vendor/page-flip.browser.js',
   'vendor/pdf.min.mjs',
@@ -58,19 +59,23 @@ self.addEventListener('fetch', (event) => {
   }
   if (req.method !== 'GET' || url.origin !== self.location.origin) return;
 
-  // Cache-first for instant/offline loads, refreshed in the background (stale-while-revalidate).
-  event.respondWith(
-    caches.match(req, { ignoreSearch: true }).then((hit) => {
-      const network = fetch(req)
-        .then((res) => {
-          if (res && res.ok && res.type === 'basic') {
-            const copy = res.clone();
-            caches.open(VERSION).then((c) => c.put(req, copy));
-          }
-          return res;
-        })
-        .catch(() => hit);
-      return hit || network;
-    })
-  );
+  const path = url.pathname;
+  const heavy = /\/(vendor|icons)\//.test(path);
+  if (heavy) {
+    // big, rarely-changing files: cache first, fill the cache the first time they're used (fonts, decoders…)
+    event.respondWith(caches.match(req, { ignoreSearch: true }).then((hit) => hit || fetch(req).then((res) => {
+      if (res && res.ok && res.type === 'basic') { const copy = res.clone(); caches.open(VERSION).then((c) => c.put(req, copy)); }
+      return res;
+    })));
+    return;
+  }
+  // app files (html/js/css): network first so a new version is picked up straight away; cache when offline or slow
+  event.respondWith((async () => {
+    const hit = await caches.match(req, { ignoreSearch: true });
+    try {
+      const res = await Promise.race([fetch(req), new Promise((_, rej) => setTimeout(() => rej(new Error('slow')), hit ? 3500 : 15000))]);
+      if (res && res.ok && res.type === 'basic') { const copy = res.clone(); caches.open(VERSION).then((c) => c.put(req, copy)); }
+      return res;
+    } catch (e) { if (hit) return hit; throw e; }
+  })());
 });

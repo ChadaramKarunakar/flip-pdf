@@ -3,6 +3,7 @@
 import * as pdfjsLib from './vendor/pdf.min.mjs';
 import * as db from './db.js';
 import { makeZip, readZip } from './zip.js';
+import { pdfParams } from './pdfopts.js';
 pdfjsLib.GlobalWorkerOptions.workerSrc = './vendor/pdf.worker.min.mjs';
 
 const $ = (id) => document.getElementById(id);
@@ -12,7 +13,7 @@ const store = {
   set: (k, v) => { try { localStorage.setItem('flippdf:' + k, v); } catch {} },
 };
 
-const BUILD = 5;
+const BUILD = 6;
 const STATUS = { unread: 'Unread', reading: 'Reading', later: 'Read later', finished: 'Finished' };
 const FILTERS = { all: 'All books', reading: 'Reading now', later: 'Read later', finished: 'Finished', fav: 'Favorites' };
 const PRIORITY = { 1: 'High', 2: 'Normal', 3: 'Low' };
@@ -48,10 +49,7 @@ const cleanTitle = (name) => name.replace(/\.pdf$/i, '').replace(/[_]+/g, ' ').r
 function visCount(b) { return b.visited ? (b.visited.match(/1/g) || []).length : 0; }
 function pct(b) {
   if (b.visited && b.pages) return Math.min(100, Math.round(visCount(b) / b.pages * 100));
-  if (b.status === 'finished') return 100;
-  if (!b.pages || b.pages < 2) return 0;
-  if (b.status === 'unread' && !b.progress) return 0;
-  return Math.min(100, Math.round(((b.progress || 0) + 1) / b.pages * 100));
+  return b.status === 'finished' ? 100 : 0;
 }
 function coverUrl(b) {
   if (!b.cover) return '';
@@ -135,7 +133,7 @@ async function importOne(file, wish) {
   const dup = [...L.books.values()].find((b) => b.fp === fp);
   if (dup) return { book: dup, isNew: false };
   const data = new Uint8Array(await file.arrayBuffer());
-  const pdf = await pdfjsLib.getDocument({ data }).promise;
+  const pdf = await pdfjsLib.getDocument(pdfParams(data)).promise;
   let info = {}; try { info = (await pdf.getMetadata()).info || {}; } catch {}
   const p1 = await pdf.getPage(1);
   const v1 = p1.getViewport({ scale: 1 });
@@ -494,7 +492,7 @@ async function imageToCover(file) {
 }
 async function coverFromPage(b, pageNo) {
   const rec = await db.files.get(b.id); if (!rec) throw new Error('PDF missing');
-  const pdf = await pdfjsLib.getDocument({ data: new Uint8Array(await rec.blob.arrayBuffer()) }).promise;
+  const pdf = await pdfjsLib.getDocument(pdfParams(new Uint8Array(await rec.blob.arrayBuffer()))).promise;
   try { return await renderCover(await pdf.getPage(Math.min(Math.max(pageNo, 1), pdf.numPages))); } finally { try { pdf.destroy(); } catch {} }
 }
 async function changeCover(b) {
@@ -727,6 +725,7 @@ document.addEventListener('visibilitychange', () => { if (!document.hidden && do
 
 /* ---------------- adding files (button, drag & drop, share, file handler) ---------------- */
 $('btnAdd').onclick = () => devicesDialog();
+$('fab').onclick = () => devicesDialog();
 $('file').onchange = async () => {
   const files = [...$('file').files]; $('file').value = '';
   const mode = L.fileMode; L.fileMode = { type: 'add' };
@@ -742,7 +741,7 @@ async function attachPdf(id, file) {
   try {
     busy('Attaching PDF…');
     const data = new Uint8Array(await file.arrayBuffer());
-    const pdf = await pdfjsLib.getDocument({ data }).promise;
+    const pdf = await pdfjsLib.getDocument(pdfParams(data)).promise;
     b.pages = pdf.numPages; b.size = file.size; b.fileName = file.name; b.fp = `${file.name}|${file.size}`; delete b.noFile;
     if (!b.cover) { try { b.cover = await renderCover(await pdf.getPage(1)); } catch {} }
     await db.files.put({ id, blob: file }); await saveBook(b); try { pdf.destroy(); } catch {}
@@ -791,7 +790,7 @@ async function backupDialog() {
   const info = await db.storageInfo();
   const d = openDialog(`<h3>Backup &amp; restore</h3>
     <p class="dlg-note">Your library lives on this device. A backup file lets you move it to another phone or computer, or keep a safety copy.</p>
-    <div class="store-info">${L.books.size} books · using ${fmtBytes(info.usage)}${info.quota ? ` of ${fmtBytes(info.quota)}` : ''} · ${info.persisted ? 'protected from automatic cleanup' : 'browser may clear it if storage runs low'}</div>
+    <div class="store-info">Flip PDF build ${BUILD} · ${L.books.size} books · using ${fmtBytes(info.usage)}${info.quota ? ` of ${fmtBytes(info.quota)}` : ''} · ${info.persisted ? 'protected from automatic cleanup' : 'browser may clear it if storage runs low'}</div>
     <div class="dlg-list">
       <button class="dlg-opt" data-b="full">Export backup with PDFs<small>One .zip with books, covers, shelves, notes and progress</small></button>
       <button class="dlg-opt" data-b="meta">Export backup without PDFs<small>Small file: only your organisation, notes and progress</small></button>

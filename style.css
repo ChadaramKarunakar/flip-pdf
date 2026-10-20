@@ -392,3 +392,34 @@ body.view-reader .stage{touch-action:pan-y}
 }
 @media (max-width:380px){.btn.back span{display:none}}
 .ver{padding:6px 12px;font-size:11px;color:var(--muted);opacity:.8}
+
+
+/* ===== layout fixes: library scrolls, compact phone UI, page error state ===== */
+.library,.lib-main{min-height:0}
+.lib-main{flex:1 1 auto}
+.lib-body{overflow-y:auto;overflow-x:hidden;overscroll-behavior:contain;-webkit-overflow-scrolling:touch}
+.page.err::after{display:flex;content:"Couldn't draw page " attr(data-n) "\A Tap the middle of the screen to retry";white-space:pre;text-align:center;color:#a33;font:600 14px var(--font-ui);padding:12px;line-height:1.5}
+.fab{display:none;position:fixed;right:16px;bottom:calc(18px + env(safe-area-inset-bottom));z-index:35;width:56px;height:56px;border-radius:50%;border:0;cursor:pointer;
+  background:linear-gradient(#e8bb58,#c98f2b);color:#2a1608;box-shadow:0 8px 20px rgba(0,0,0,.55),inset 0 1px 0 rgba(255,255,255,.4);align-items:center;justify-content:center}
+@media (max-width:720px){
+  body.view-library .fab{display:flex}
+  body.view-library.selecting .fab{display:none}
+  body.view-library #btnAdd{display:none!important}
+  .library{padding:0 10px 0;gap:0}
+  .side{flex:none;margin-bottom:6px;padding-bottom:4px}
+  .lib-head{gap:8px;padding:0 0 6px}
+  .lib-head h2{flex:1 1 100%;font-size:20px;min-width:0}
+  .lib-tools{display:grid;grid-template-columns:1fr 1fr auto auto;gap:6px;width:100%}
+  .lib-tools input{grid-column:1/-1;width:100%}
+  .lib-tools select{width:100%;min-width:0;padding:8px 8px;font-size:13px}
+  .lib-body{border-width:5px;border-radius:4px;padding:12px 6px calc(96px + env(safe-area-inset-bottom));margin-bottom:8px}
+  .tagrow{padding-bottom:6px;flex-wrap:nowrap;overflow-x:auto;scrollbar-width:none}.tagrow .chip{flex:none}
+  .continue{padding:10px;gap:12px}
+  .wish-form input,.wish-form select{width:100%}
+}
+@media (max-width:720px){
+  .side{align-items:flex-start;max-height:52px}
+  .side-item{padding:7px 12px;line-height:1.2}
+  .side-foot{display:flex;padding:0;margin:0}
+  .side-foot .ver{display:none}
+}
