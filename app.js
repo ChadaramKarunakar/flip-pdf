@@ -194,7 +194,7 @@ function buildBook() {
     minWidth: mode === 'single' ? f.pageW : 100, maxWidth: 4000, minHeight: 100, maxHeight: 6000,
     showCover: true, usePortrait: true, startPage: Math.min(S.cur, S.n - 1),
     drawShadow: true, maxShadowOpacity: 0.45, flippingTime: 750,
-    mobileScrollSupport: false, swipeDistance: 25, useMouseEvents: true, clickEventForward: false,
+    mobileScrollSupport: false, swipeDistance: 8, useMouseEvents: !TOUCH, clickEventForward: false,
   });
   flip.loadFromHTML(nodes);
   flip.on('flip', (e) => onFlip(e.data));
@@ -278,6 +278,26 @@ el.reader.addEventListener('click', (e) => {
   const r = el.reader.getBoundingClientRect(); const x = (e.clientX - r.left) / r.width;
   if (x < 0.28) api.prev(); else if (x > 0.72) api.next();
 });
+
+// Touch screens: the curl is driven by simple, forgiving gestures instead of a precise corner drag.
+// A short swipe or a tap on the left/right edge turns the page with the animated curl.
+const TOUCH = matchMedia('(pointer: coarse)').matches;
+let gest = null;
+el.stage.addEventListener('pointerdown', (e) => {
+  if (!TOUCH || !S.flip || e.target.closest('button,input,select,a')) { gest = null; return; }
+  gest = { x: e.clientX, y: e.clientY, t: Date.now() };
+});
+el.stage.addEventListener('pointerup', (e) => {
+  const g0 = gest; gest = null;
+  if (!g0 || !S.flip) return;
+  const dx = e.clientX - g0.x, dy = e.clientY - g0.y, dt = Date.now() - g0.t;
+  if (Math.abs(dx) > 28 && Math.abs(dx) > Math.abs(dy) * 1.2) { dx < 0 ? api.next() : api.prev(); }
+  else if (Math.abs(dx) < 12 && Math.abs(dy) < 12 && dt < 400) {
+    const r = el.stage.getBoundingClientRect(); const x = (e.clientX - r.left) / r.width;
+    if (x < 0.32) api.prev(); else if (x > 0.68) api.next();
+  }
+});
+el.stage.addEventListener('pointercancel', () => { gest = null; });
 
 const api = {
   next() { S.flip ? S.flip.flipNext() : readerGo(S.cur + 1); },
@@ -484,7 +504,15 @@ $('btnExport').onclick = async () => {
 
 /* ---------- PWA: install, offline, receive PDFs from the phone's Share menu ---------- */
 if ('serviceWorker' in navigator) {
-  window.addEventListener('load', () => navigator.serviceWorker.register('./sw.js').catch((e) => console.warn('SW', e)));
+  const hadController = !!navigator.serviceWorker.controller;
+  let refreshed = false;
+  // when a new version takes over, reload (now if you're in the library, otherwise when you get back to it)
+  navigator.serviceWorker.addEventListener('controllerchange', () => {
+    if (!hadController || refreshed) return; refreshed = true;
+    if (document.body.classList.contains('view-library')) location.reload();
+    else window.addEventListener('hashchange', () => { if (location.hash.startsWith('#/library')) location.reload(); }, { once: true });
+  });
+  window.addEventListener('load', () => navigator.serviceWorker.register('./sw.js', { updateViaCache: 'none' }).then((r) => r.update && r.update()).catch((e) => console.warn('SW', e)));
 }
 let deferredInstall = null;
 window.addEventListener('beforeinstallprompt', (e) => { e.preventDefault(); deferredInstall = e; $('btnInstall').hidden = false; });

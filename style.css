@@ -366,3 +366,29 @@ body[data-theme="light"] .code{background:rgba(255,246,226,.6);color:#3a2412}
 .legend-filter{justify-content:flex-start;max-width:none}
 .hlbar{flex-wrap:wrap;justify-content:center;max-width:94vw}
 .hlbar{bottom:calc(96px + env(safe-area-inset-bottom))!important}
+
+/* reader header: back button, compact on phones, overflow menu */
+.actions{position:relative}
+.more-only{display:none!important}
+.moremenu{position:absolute;right:0;top:calc(100% + 8px);min-width:230px;z-index:60;display:flex;flex-direction:column;padding:6px;border-radius:12px;
+  background:linear-gradient(rgba(0,0,0,.2),rgba(0,0,0,.35)),var(--wood) 0 0/700px 500px,var(--bg1);border:2px solid var(--accent);box-shadow:0 14px 34px rgba(0,0,0,.55)}
+.moremenu button,.moremenu a{appearance:none;border:0;background:none;color:#f5e8d2;text-align:left;font:inherit;font-size:15px;padding:12px 14px;border-radius:8px;cursor:pointer}
+.moremenu button:hover,.moremenu a:hover{background:rgba(255,222,170,.16)}
+body[data-theme="light"] .moremenu button,body[data-theme="light"] .moremenu a{color:#3a2412}
+body[data-theme="light"] .moremenu{background:linear-gradient(rgba(255,246,226,.6),rgba(255,246,226,.4)),var(--wood) 0 0/700px 500px,#e7cf9f}
+.btn.back span{margin-left:2px}
+body.view-reader .brand{display:none}
+body.view-reader .stage{touch-action:pan-y}
+@media (max-width:720px){
+  .top{padding:8px 10px;gap:6px}
+  body.view-reader .title{display:block;flex:1;font-size:13px;text-align:left}
+  body.view-reader #btnMode,body.view-reader #btnFull,body.view-reader #btnExport,body.view-reader #btnTheme,body.view-reader #btnInstall{display:none!important}
+  body.view-reader.has-book #btnMore{display:inline-flex!important}
+  body.view-reader .actions{gap:6px}
+  body.view-reader .btn.icon-only{width:40px;height:40px}
+  .btn.back{padding:8px 10px}
+  .bar{padding:8px 12px calc(10px + env(safe-area-inset-bottom))}
+  .counter{margin-left:0}
+}
+@media (max-width:380px){.btn.back span{display:none}}
+.ver{padding:6px 12px;font-size:11px;color:var(--muted);opacity:.8}

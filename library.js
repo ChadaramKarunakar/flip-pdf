@@ -12,6 +12,7 @@ const store = {
   set: (k, v) => { try { localStorage.setItem('flippdf:' + k, v); } catch {} },
 };
 
+const BUILD = 5;
 const STATUS = { unread: 'Unread', reading: 'Reading', later: 'Read later', finished: 'Finished' };
 const FILTERS = { all: 'All books', reading: 'Reading now', later: 'Read later', finished: 'Finished', fav: 'Favorites' };
 const PRIORITY = { 1: 'High', 2: 'Normal', 3: 'Low' };
@@ -232,7 +233,7 @@ function renderSide() {
     (L.shelves.length
       ? L.shelves.map((s) => item('#/shelf/' + s.id, s.name, [...L.books.values()].filter((b) => b.shelves.includes(s.id)).length, r.name === 'shelf' && r.key === s.id)).join('')
       : `<div class="side-hint">Create shelves like “Novels”, “Study” or “Business”.</div>`) +
-    `<div class="side-foot"><button class="side-item btn-like" data-act="backup"><span>Backup &amp; restore</span></button></div>`;
+    `<div class="side-foot"><button class="side-item btn-like" data-act="backup"><span>Backup &amp; restore</span></button><div class="ver">Flip PDF · build ${BUILD}</div></div>`;
 }
 
 /* ---------------- rendering: books ---------------- */
@@ -1153,6 +1154,15 @@ window.addEventListener('keydown', (e) => {
   else if (e.key === 'n' || e.key === 'N') { e.preventDefault(); toggleDrawer(); }
   else if (e.key === 'h' || e.key === 'H') setHighlightMode(!L.hl);
 });
+
+/* ---------------- reader overflow menu ---------------- */
+$('btnMore').onclick = (e) => { e.stopPropagation(); $('moreMenu').hidden = !$('moreMenu').hidden; };
+$('moreMenu').addEventListener('click', (e) => {
+  const t = e.target.closest('[data-proxy]'); $('moreMenu').hidden = true;
+  if (t) $(t.dataset.proxy).click();
+});
+document.addEventListener('click', (e) => { if (!e.target.closest('#moreMenu,#btnMore')) $('moreMenu').hidden = true; });
+window.addEventListener('hashchange', () => { $('moreMenu').hidden = true; });
 
 /* ---------------- routing ---------------- */
 function parseHash() {

@@ -17,6 +17,9 @@
 <body data-theme="dark" class="view-library">
 
 <header class="top">
+  <a class="btn read-only back" id="btnBack" href="#/library" title="Back to your library">
+    <svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M15 5l-7 7 7 7"/></svg><span>Library</span>
+  </a>
   <a class="brand" href="#/library" title="Library">
     <svg viewBox="0 0 32 32" width="26" height="26" aria-hidden="true"><rect width="32" height="32" rx="8" fill="var(--accent)"/><path d="M16 9c-2.5-1.6-5.5-2-9-1.5v15c3.5-.5 6.5-.1 9 1.5 2.5-1.6 5.5-2 9-1.5v-15c-3.5-.5-6.5-.1-9 1.5z" fill="none" stroke="#1a1410" stroke-width="2" stroke-linejoin="round"/><path d="M16 9v15" stroke="#1a1410" stroke-width="2"/></svg>
     <span>Flip PDF</span>
@@ -45,6 +48,16 @@
       <svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M4 9V4h5M20 9V4h-5M4 15v5h5M20 15v5h-5"/></svg>
     </button>
     <button class="btn read-only" id="btnExport" title="Save a single HTML file you can share or host anywhere">Export</button>
+    <button class="btn icon-only read-only more-only" id="btnMore" aria-label="More options" aria-haspopup="true">
+      <svg viewBox="0 0 24 24" width="20" height="20" fill="currentColor"><circle cx="12" cy="5" r="2"/><circle cx="12" cy="12" r="2"/><circle cx="12" cy="19" r="2"/></svg>
+    </button>
+    <div class="moremenu" id="moreMenu" hidden>
+      <button data-proxy="btnMode">Change view (curl / swipe)</button>
+      <button data-proxy="btnTheme">Light / dark theme</button>
+      <button data-proxy="btnFull">Fullscreen</button>
+      <button data-proxy="btnExport">Export flipbook</button>
+      <a href="#/library">Back to library</a>
+    </div>
   </div>
 </header>
 
