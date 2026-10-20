@@ -46,3 +46,18 @@ so installed copies refresh.
 - Pages are images, so text isn't selectable (layout stays exact).
 - Don't open `index.html` by double-clicking; browsers block the PDF engine on `file://`. Use the start script.
 - Libraries: pdf.js (Apache-2.0, legacy build for wide browser support), StPageFlip (MIT).
+
+
+## Library (v2)
+
+Flip PDF is now a small book-reading app. Everything is stored **on your device** (IndexedDB), private and offline.
+
+- **Library**: add one or many PDFs (button, drag & drop, share-to-app on phones). Covers are made from page 1, or set your own (image or any page of the PDF).
+- **Organise**: shelves, tags, a category per book, favourites, 1–5 star rating; group by author / category / status; search by title, author, category or tag.
+- **Status lists**: Reading, Read later, Finished (auto-updates as you read).
+- **Wishlist**: books you want, with priority, note and link. "I have the PDF" moves it into the library.
+- **Reading progress**: percentage = pages you actually visited (a page counts after you stay on it ~1 second).
+- **Annotations**: bookmark pages (B), write page notes (N), highlight areas in four colours with optional comments (H, Reader view). Everything is collected under *Notes & bookmarks*.
+- **Backup & restore**: export a `.zip` (with or without the PDFs) and restore it on another phone/computer. This is how to move your library between devices until cloud sync is added.
+
+Storage layout lives behind `db.js`, so a Cloudflare (D1/R2) sync backend can later be added without touching the UI.

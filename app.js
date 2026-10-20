@@ -4,7 +4,7 @@ pdfjsLib.GlobalWorkerOptions.workerSrc = './vendor/pdf.worker.min.mjs';
 
 const $ = (id) => document.getElementById(id);
 const el = {
-  stage: $('stage'), host: $('bookHost'), title: $('title'), file: $('file'), drop: $('drop'),
+  stage: $('stage'), host: $('bookHost'), title: $('title'),
   slider: $('slider'), pageInput: $('pageInput'), pageTotal: $('pageTotal'), quality: $('quality'),
   prep: $('prep'), overlay: $('overlay'), overlayText: $('overlayText'), meterWrap: $('meterWrap'),
   meter: $('meter'), toast: $('toast'), modeIcon: $('modeIcon'), reader: $('reader'),
@@ -21,7 +21,7 @@ function IS_PHONE() {
 const LOW_MEM = IS_PHONE() || (navigator.deviceMemory && navigator.deviceMemory <= 4);
 
 const S = {
-  pdf: null, n: 0, ratio: 0.66, name: '', key: '',
+  pdf: null, n: 0, ratio: 0.66, name: '', key: '', bookId: null,
   tw: 980, th: 1400,
   urls: [], blobs: [], imgs: [], inflight: {}, failed: {}, done: 0,
   flip: null, cur: 0, gen: 0, pumping: false,
@@ -78,46 +78,37 @@ function toggleFullscreen() {
 }
 document.addEventListener('fullscreenchange', () => setTimeout(layout, 120));
 
-/* ---------- opening files ---------- */
-$('btnOpen').onclick = $('btnChoose').onclick = () => el.file.click();
-el.drop.addEventListener('keydown', (e) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); el.file.click(); } });
-el.file.onchange = () => { const f = el.file.files[0]; el.file.value = ''; if (f) loadFile(f); };
-
-let dragDepth = 0;
-window.addEventListener('dragenter', (e) => { e.preventDefault(); dragDepth++; document.body.classList.add('dragging'); });
-window.addEventListener('dragleave', () => { if (--dragDepth <= 0) { dragDepth = 0; document.body.classList.remove('dragging'); } });
-window.addEventListener('dragover', (e) => e.preventDefault());
-window.addEventListener('drop', (e) => {
-  e.preventDefault(); dragDepth = 0; document.body.classList.remove('dragging');
-  const f = [...(e.dataTransfer?.files || [])].find((x) => /pdf$/i.test(x.type) || /\.pdf$/i.test(x.name));
-  if (f) loadFile(f); else toast('Please drop a PDF file.');
-});
-
-async function loadFile(file) {
-  showOverlay('Reading PDF…');
+/* ---------- opening a PDF (the library decides which one) ---------- */
+async function loadFile(file, opts = {}) {
+  document.body.classList.remove('view-library'); document.body.classList.add('view-reader');
+  showOverlay('Opening…');
   try {
     const data = new Uint8Array(await file.arrayBuffer());
     const pdf = await pdfjsLib.getDocument({ data }).promise;
     resetBook();
     S.pdf = pdf; S.n = pdf.numPages;
-    S.name = file.name.replace(/\.pdf$/i, '');
+    S.bookId = opts.bookId || null;
+    S.name = opts.title || file.name.replace(/\.pdf$/i, '');
     S.key = `pos:${file.name}:${file.size}:${S.n}`;
     const p1 = await pdf.getPage(1);
     const vp = p1.getViewport({ scale: 1 });
     S.ratio = vp.width / vp.height;
     setQuality(S.th0);
-    S.cur = Math.min(Math.max(Number(store.get(S.key, '0')) || 0, 0), S.n - 1);
-    el.title.textContent = `${S.name} · ${S.n} pages`;
+    const start = opts.startPage != null ? opts.startPage : Number(store.get(S.key, '0')) || 0;
+    S.cur = Math.min(Math.max(start, 0), S.n - 1);
+    el.title.textContent = S.name;
     document.title = `${S.name} — Flip PDF`;
     document.body.classList.add('has-book');
     buildBook();
-    if (S.cur > 0) toast(`Resumed at page ${S.cur + 1}`);
+    window.dispatchEvent(new CustomEvent('flip:open', { detail: { bookId: S.bookId, n: S.n } }));
+    return true;
   } catch (err) {
     console.error(err);
     const msg = err?.name === 'PasswordException'
       ? 'This PDF is password-protected. Remove the password and try again.'
       : 'Could not open that file. Is it a valid PDF?';
     toast(msg, 5000);
+    return false;
   } finally {
     hideOverlay();
   }
@@ -158,7 +149,7 @@ function fit(mode) {
   return { w: Math.max(Math.floor(w), 100), h: Math.max(Math.floor(h), 100), pageW: Math.max(Math.floor(w / per), 50) };
 }
 function layout() {
-  if (!S.pdf) return;
+  if (!S.pdf || !document.body.classList.contains('view-reader')) return;
   if (effMode() !== S.builtMode) { buildBook(); return; }
   if (S.builtMode === 'slide') { sizeReader(); return; }
   const f = fit(S.builtMode);
@@ -212,6 +203,7 @@ function buildBook() {
   el.slider.max = S.n; el.pageInput.max = S.n; el.pageTotal.textContent = '/ ' + S.n;
   onFlip(Math.min(S.cur, S.n - 1));
   pump();
+  window.dispatchEvent(new CustomEvent('flip:built'));
 }
 
 function onFlip(idx) {
@@ -221,6 +213,8 @@ function onFlip(idx) {
   el.pageInput.value = idx + 1;
   const lab = landscape && idx > 0 && idx + 1 < S.n ? `${idx + 1}–${idx + 2}` : String(idx + 1);
   el.pageInput.title = `Showing ${lab}`;
+  const last = landscape && idx > 0 && idx + 1 < S.n ? idx + 1 : idx;
+  window.dispatchEvent(new CustomEvent('flip:page', { detail: { idx, last, n: S.n, bookId: S.bookId } }));
   $('navPrev').disabled = $('btnPrev').disabled = $('btnFirst').disabled = idx <= 0;
   $('navNext').disabled = $('btnNext').disabled = $('btnLast').disabled = idx >= S.n - 1;
   evict();
@@ -258,6 +252,7 @@ function buildReader() {
   r.scrollLeft = S.cur * r.clientWidth;
   onFlip(Math.min(S.cur, S.n - 1));
   pump();
+  window.dispatchEvent(new CustomEvent('flip:built'));
 }
 function sizeReader() {
   const f = fit('single');
@@ -353,7 +348,7 @@ el.pageInput.onkeydown = (e) => { if (e.key === 'Enter') { go(Number(el.pageInpu
 el.pageInput.onchange = () => go(Number(el.pageInput.value) - 1);
 
 window.addEventListener('keydown', (e) => {
-  if (!S.pdf || e.target.tagName === 'INPUT' || e.target.tagName === 'SELECT' || e.metaKey || e.ctrlKey || e.altKey) return;
+  if (!S.pdf || !document.body.classList.contains('view-reader') || e.target.tagName === 'INPUT' || e.target.tagName === 'SELECT' || e.metaKey || e.ctrlKey || e.altKey) return;
   const k = e.key;
   if (k === 'ArrowRight' || k === 'PageDown' || k === ' ') { e.preventDefault(); api.next(); }
   else if (k === 'ArrowLeft' || k === 'PageUp') { e.preventDefault(); api.prev(); }
@@ -498,26 +493,17 @@ $('btnInstall').onclick = async () => {
   if (!deferredInstall) return;
   deferredInstall.prompt(); await deferredInstall.userChoice; deferredInstall = null; $('btnInstall').hidden = true;
 };
-// A PDF shared to the installed app (Android Share menu) is stashed by the service worker
-(async function openSharedPdf() {
-  if (!location.search.includes('shared=1') || !('caches' in window)) return;
-  try {
-    const c = await caches.open('flippdf-shared');
-    const r = await c.match('shared-pdf');
-    history.replaceState(null, '', location.pathname);
-    if (!r) return;
-    const blob = await r.blob();
-    const name = decodeURIComponent(r.headers.get('x-name') || 'shared.pdf');
-    await c.delete('shared-pdf');
-    loadFile(new File([blob], name, { type: 'application/pdf' }));
-  } catch (e) { console.warn(e); }
-})();
-// "Open with Flip PDF" from the desktop file manager (installed desktop PWA)
-if ('launchQueue' in window) {
-  window.launchQueue.setConsumer(async (p) => {
-    if (p.files && p.files.length) loadFile(await p.files[0].getFile());
-  });
-}
-
 // expose a tiny hook for automated testing
 window.__flippdf = { S, loadFile };
+// What the library module needs from the reader
+window.FlipReader = {
+  loadFile,
+  goto: (i) => api.go(i),
+  activate: () => layout(),
+  get bookId() { return S.bookId; },
+  get n() { return S.n; },
+  get page() { return S.cur; },
+  get mode() { return S.builtMode; },
+  pageEl: (i) => (S.imgs[i] ? S.imgs[i].parentElement : null),
+  useReaderMode() { if (S.builtMode !== 'slide') { S.mode = 'slide'; store.set('mode', 'slide'); modeIconPath(); if (S.pdf) buildBook(); } },
+};

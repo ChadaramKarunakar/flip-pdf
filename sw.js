@@ -1,12 +1,15 @@
 // Flip PDF service worker: makes the app work offline and receives PDFs from the phone's Share menu.
 // Bump VERSION whenever app files change so installed copies refresh.
-const VERSION = 'flippdf-v1';
+const VERSION = 'flippdf-v2';
 const SHARED_CACHE = 'flippdf-shared';
 const SHELL = [
   './',
   'index.html',
   'style.css',
   'app.js',
+  'library.js',
+  'db.js',
+  'zip.js',
   'manifest.webmanifest',
   'vendor/page-flip.browser.js',
   'vendor/pdf.min.mjs',
